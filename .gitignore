@@ -26,6 +26,9 @@ Thumbs.db
 *.sln
 *.sw?
 
+# Claude Code local (personal) settings
+.claude/settings.local.json
+
 # Vite / TS caches
 .vite/
 *.tsbuildinfo
