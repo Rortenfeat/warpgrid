@@ -20,13 +20,27 @@ app in a runnable state.
 - Smooth zoom/scroll, minimap, follow-playhead.
 - MIDI playback (Tone.js) alongside audio.
 
-## Phase 2 — Grid & manual correction (the core craft)
+## Phase 2 — Grid & manual correction (the core craft) ✅
 
-- Anchor editing UX: snapping, nudging, numeric tempo entry per segment.
-- Ramp segments: exact linear-tempo integration in `beatToTime`/`timeToBeat`
-  (Phase 0 is piecewise-constant only — see note in `core/tempoMap.ts`).
-- Time-signature editor (insert/change at a bar; keyboard-driven).
-- Multi-anchor selection, drag groups, undo/redo polish.
+- Selection: click / Shift-click / rubber-band; group drag preserves spacing.
+- Snapping while dragging (to other anchors / playhead / origin); Ctrl bypasses.
+- Keyboard: ←/→ nudge (Shift ×10), Delete, Ctrl+A, Esc, A (add at playhead),
+  plus a `?` shortcuts overlay.
+- Per-segment numeric tempo entry: double-click the tempo lane or use the
+  Inspector; retunes one segment while keeping downstream tempos (exact times).
+- Time-signature editor: add at the playhead bar, edit numerator/denominator,
+  delete (bar-1 protected). Bar lines re-flow live.
+- Inspector bar: contextual numeric editing of the selected anchor / segment /
+  time signature (single page, no secondary screen).
+- Undo/redo polish: a whole drag gesture collapses into one undo step
+  (`pauseHistory`/`resumeHistory` around the gesture).
+
+### Phase 2b — deferred
+
+- True smooth **ramp** segments: exact linear-tempo (logarithmic) integration in
+  `beatToTime`/`timeToBeat`, with explicit BPM markers so the curve is
+  well-determined. Phase 0/2 keep the exact piecewise-constant model.
+- Snapping to audio transients (needs onset detection — Phase 3).
 
 ## Phase 3 — Assisted detection
 

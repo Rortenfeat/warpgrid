@@ -18,3 +18,22 @@
   color: var(--text-2);
   pointer-events: none;
 }
+
+.lane canvas {
+  cursor: pointer;
+}
+
+.bpmInput {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 64px;
+  padding: 3px 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-0);
+  background: var(--bg-3);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  outline: none;
+}

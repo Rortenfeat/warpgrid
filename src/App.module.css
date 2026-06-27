@@ -1,6 +1,6 @@
 .app {
   display: grid;
-  grid-template-rows: var(--h-toolbar) 1fr var(--h-transport) var(--h-status);
+  grid-template-rows: var(--h-toolbar) 1fr var(--h-inspector) var(--h-transport) var(--h-status);
   height: 100%;
   position: relative;
 }
@@ -16,7 +16,7 @@
 
 .hint {
   position: absolute;
-  inset: var(--h-toolbar) 0 calc(var(--h-transport) + var(--h-status)) 0;
+  inset: var(--h-toolbar) 0 calc(var(--h-inspector) + var(--h-transport) + var(--h-status)) 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -49,4 +49,52 @@
 .hintInner em {
   color: var(--accent);
   font-style: normal;
+}
+
+.shortcuts {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 9, 12, 0.6);
+  backdrop-filter: blur(3px);
+}
+
+.shortcutsCard {
+  min-width: 360px;
+  padding: 20px 24px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-2);
+}
+
+.shortcutsCard h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+
+.shortcutsCard dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 7px 18px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.shortcutsCard dt {
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.shortcutsCard dd {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.shortcutsClose {
+  margin-top: 16px;
 }

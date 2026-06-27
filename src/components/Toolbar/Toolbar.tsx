@@ -3,13 +3,30 @@ import styles from './Toolbar.module.css'
 import { useFileImport } from '../../hooks/useFileImport'
 import { useProjectStore, useHistory } from '../../state/useProjectStore'
 import { ExportPanel } from '../ExportPanel/ExportPanel'
+import { timeToBeat } from '../../core/tempoMap'
+import { quarterBeatToBarBeat } from '../../core/timeSignature'
 
-export function Toolbar() {
+export function Toolbar({ onShowShortcuts }: { onShowShortcuts: () => void }) {
   const importFiles = useFileImport()
   const reset = useProjectStore((s) => s.reset)
   const sources = useProjectStore((s) => s.project.sources)
   const { undo, redo } = useHistory()
   const fileInput = useRef<HTMLInputElement>(null)
+  const hasSources = sources.length > 0
+
+  const addAnchorAtPlayhead = () => {
+    const s = useProjectStore.getState()
+    const t = s.view.playheadSec
+    const beat = Math.round(timeToBeat(t, s.project.anchors))
+    s.selectAnchors([s.addAnchor(beat, t)])
+  }
+
+  const addTimeSigAtPlayhead = () => {
+    const s = useProjectStore.getState()
+    const beat = timeToBeat(s.view.playheadSec, s.project.anchors)
+    const { bar } = quarterBeatToBarBeat(beat, s.project.timeSignatures)
+    s.selectTimeSignature(s.addTimeSignature(bar, 4, 4))
+  }
 
   return (
     <header className={styles.toolbar}>
@@ -42,6 +59,11 @@ export function Toolbar() {
       </div>
 
       <div className={styles.group}>
+        <button title="Add anchor at playhead (A)" disabled={!hasSources} onClick={addAnchorAtPlayhead}>+ Anchor</button>
+        <button title="Add time signature at playhead bar" disabled={!hasSources} onClick={addTimeSigAtPlayhead}>+ Time Sig</button>
+      </div>
+
+      <div className={styles.group}>
         <button title="Undo (Ctrl+Z)" onClick={undo}>↶ Undo</button>
         <button title="Redo (Ctrl+Shift+Z)" onClick={redo}>↷ Redo</button>
       </div>
@@ -49,7 +71,8 @@ export function Toolbar() {
       <div className={styles.spacer} />
 
       <div className={styles.group}>
-        <button onClick={reset} disabled={sources.length === 0}>Clear</button>
+        <button title="Keyboard shortcuts (?)" onClick={onShowShortcuts}>?</button>
+        <button onClick={reset} disabled={!hasSources}>Clear</button>
         <ExportPanel />
       </div>
     </header>

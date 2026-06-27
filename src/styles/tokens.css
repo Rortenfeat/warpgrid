@@ -39,6 +39,7 @@
   --h-transport: 44px;
   --h-status: 26px;
   --h-tempolane: 96px;
+  --h-inspector: 36px;
 
   /* Type */
   --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
