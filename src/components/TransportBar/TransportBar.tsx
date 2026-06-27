@@ -1,0 +1,107 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import styles from './TransportBar.module.css'
+import { useProjectStore } from '../../state/useProjectStore'
+
+/** Lazily-created shared AudioContext for playback. */
+let sharedCtx: AudioContext | null = null
+function getCtx(): AudioContext {
+  if (!sharedCtx) sharedCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
+  return sharedCtx
+}
+
+/**
+ * Transport: play / stop audio, scrub, and zoom. Playback drives the shared
+ * playhead (view.playheadSec) via requestAnimationFrame so the Timeline and
+ * TempoLane stay in sync. When no audio is loaded the play button is disabled
+ * (MIDI playback is a Phase 1 addition).
+ */
+export function TransportBar() {
+  const media = useProjectStore((s) => s.media)
+  const sources = useProjectStore((s) => s.project.sources)
+  const view = useProjectStore((s) => s.view)
+  const setView = useProjectStore((s) => s.setView)
+
+  const audioBuffer = useMemo(() => {
+    for (const src of sources) {
+      const m = media[src.id]
+      if (m?.audioBuffer) return m.audioBuffer
+    }
+    return undefined
+  }, [sources, media])
+
+  const [playing, setPlaying] = useState(false)
+  const nodeRef = useRef<AudioBufferSourceNode | null>(null)
+  const rafRef = useRef<number | null>(null)
+  const startedAtRef = useRef(0)
+  const offsetRef = useRef(0)
+
+  const stop = () => {
+    if (nodeRef.current) {
+      try { nodeRef.current.stop() } catch { /* already stopped */ }
+      nodeRef.current.disconnect()
+      nodeRef.current = null
+    }
+    if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    rafRef.current = null
+    setPlaying(false)
+  }
+
+  const play = () => {
+    if (!audioBuffer) return
+    const ctx = getCtx()
+    void ctx.resume()
+    const node = ctx.createBufferSource()
+    node.buffer = audioBuffer
+    node.connect(ctx.destination)
+    const offset = Math.min(view.playheadSec, audioBuffer.duration - 0.01)
+    offsetRef.current = Math.max(0, offset)
+    startedAtRef.current = ctx.currentTime
+    node.start(0, offsetRef.current)
+    node.onended = () => { if (nodeRef.current === node) stop() }
+    nodeRef.current = node
+    setPlaying(true)
+
+    const tick = () => {
+      const t = offsetRef.current + (ctx.currentTime - startedAtRef.current)
+      setView({ playheadSec: t })
+      if (t >= audioBuffer.duration) { stop(); return }
+      rafRef.current = requestAnimationFrame(tick)
+    }
+    rafRef.current = requestAnimationFrame(tick)
+  }
+
+  // Clean up on unmount.
+  useEffect(() => stop, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const zoom = (factor: number) =>
+    setView({ pxPerSecond: Math.min(4000, Math.max(8, view.pxPerSecond * factor)) })
+
+  const fmt = (s: number) => {
+    const m = Math.floor(s / 60)
+    const sec = (s % 60).toFixed(2).padStart(5, '0')
+    return `${m}:${sec}`
+  }
+
+  return (
+    <footer className={styles.transport}>
+      <div className={styles.group}>
+        <button className={styles.iconBtn} onClick={() => { stop(); setView({ playheadSec: 0 }) }} title="Return to start">⏮</button>
+        {playing ? (
+          <button className={`${styles.iconBtn} primary`} onClick={stop} title="Stop">⏸</button>
+        ) : (
+          <button className={`${styles.iconBtn} primary`} onClick={play} disabled={!audioBuffer} title="Play">▶</button>
+        )}
+      </div>
+
+      <div className={`${styles.time} mono`}>{fmt(view.playheadSec)}</div>
+
+      <div className={styles.spacer} />
+
+      <div className={styles.group}>
+        <span className={styles.zoomLabel}>Zoom</span>
+        <button className={styles.iconBtn} onClick={() => zoom(1 / 1.3)} title="Zoom out">－</button>
+        <button className={styles.iconBtn} onClick={() => zoom(1.3)} title="Zoom in">＋</button>
+      </div>
+    </footer>
+  )
+}

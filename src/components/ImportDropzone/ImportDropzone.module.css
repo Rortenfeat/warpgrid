@@ -1,0 +1,25 @@
+.zone {
+  height: 100%;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(13, 15, 19, 0.6);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+
+.box {
+  padding: 28px 40px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent);
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}

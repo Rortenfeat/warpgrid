@@ -1,0 +1,33 @@
+.status {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 12px;
+  height: var(--h-status);
+  background: var(--bg-1);
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--text-1);
+}
+
+.msg {
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 50%;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.field {
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.field b {
+  color: var(--text-0);
+  font-weight: 600;
+}

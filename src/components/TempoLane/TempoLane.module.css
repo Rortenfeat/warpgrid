@@ -1,0 +1,20 @@
+.lane {
+  position: relative;
+  min-height: 0;
+  background: var(--bg-1);
+  border-top: 1px solid var(--line);
+}
+
+.lane canvas {
+  display: block;
+}
+
+.label {
+  position: absolute;
+  top: 5px;
+  left: 8px;
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  color: var(--text-2);
+  pointer-events: none;
+}

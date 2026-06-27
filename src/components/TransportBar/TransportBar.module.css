@@ -1,0 +1,37 @@
+.transport {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  height: var(--h-transport);
+  background: var(--bg-1);
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.iconBtn {
+  min-width: 34px;
+  padding: 5px 8px;
+  text-align: center;
+}
+
+.time {
+  font-size: 15px;
+  color: var(--text-0);
+  padding: 0 8px;
+  letter-spacing: 0.5px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.zoomLabel {
+  font-size: 11px;
+  color: var(--text-2);
+  margin-right: 2px;
+}

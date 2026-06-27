@@ -1,0 +1,49 @@
+/* Warpgrid design tokens — a calm, professional, dark DAW palette.
+   Tuned for long sessions: low-glare surfaces, one confident accent. */
+:root {
+  /* Surfaces (near-black, slightly blue) */
+  --bg-0: #0d0f13; /* app background */
+  --bg-1: #13161c; /* panels */
+  --bg-2: #1a1e26; /* raised controls */
+  --bg-3: #222732; /* hover / inputs */
+
+  /* Lines & borders */
+  --line: #2a2f3a;
+  --line-strong: #3a4150;
+
+  /* Text */
+  --text-0: #e6e9ef; /* primary */
+  --text-1: #aab1c0; /* secondary */
+  --text-2: #6b7383; /* muted / labels */
+
+  /* Accent — Warpgrid blue (the warped tempo curve) */
+  --accent: #5b8cff;
+  --accent-dim: #3a5dab;
+  --accent-soft: rgba(91, 140, 255, 0.14);
+
+  /* Signal colors */
+  --wave: #4a5775;       /* waveform body */
+  --wave-hi: #6c7da6;    /* waveform peaks */
+  --grid: #2a3140;       /* beat grid lines */
+  --grid-bar: #495168;   /* bar (downbeat) lines */
+  --anchor: #ffb454;     /* warp anchors / grid handles */
+  --anchor-detected: #c98b3a;
+  --playhead: #ff5d6c;
+  --ok: #5fd3a0;
+  --warn: #ffcf5b;
+
+  /* Geometry */
+  --radius: 6px;
+  --radius-sm: 4px;
+  --h-toolbar: 48px;
+  --h-transport: 44px;
+  --h-status: 26px;
+  --h-tempolane: 96px;
+
+  /* Type */
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Consolas', ui-monospace, monospace;
+
+  --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
