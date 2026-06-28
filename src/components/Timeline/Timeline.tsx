@@ -82,19 +82,21 @@ export function Timeline() {
   )
   const selectedTsId = selection.kind === 'timeSignature' ? selection.timeSignatureId : undefined
 
-  const { audioBuffer, peaks, parsedMidi, contentDuration } = useMemo(() => {
+  const { audioBuffer, peaks, parsedMidi, onsetTimes, contentDuration } = useMemo(() => {
     let audioBuffer: AudioBuffer | undefined
     let peaks: WaveformPeaks | undefined
     let parsedMidi: ParsedMidi | undefined
+    let onsetTimes: number[] = []
     let dur = 0
     for (const src of project.sources) {
       const m = media[src.id]
       if (m?.audioBuffer) audioBuffer = m.audioBuffer
       if (m?.peaks) peaks = m.peaks
+      if (m?.onsets) onsetTimes = m.onsets.onsets
       if (m?.parsedMidi) parsedMidi = m.parsedMidi
       dur = Math.max(dur, src.duration)
     }
-    return { audioBuffer, peaks, parsedMidi, contentDuration: dur || 8 }
+    return { audioBuffer, peaks, parsedMidi, onsetTimes, contentDuration: dur || 8 }
   }, [project.sources, media])
 
   useEffect(() => {
@@ -182,6 +184,22 @@ export function Timeline() {
           ctx.globalAlpha = 0.35 + Math.min(0.65, n.velocity ?? 0.8)
           ctx.fillRect(x, y - 2, w, 3)
         }
+      }
+      ctx.globalAlpha = 1
+    }
+
+    // ── detected transients ──
+    if (onsetTimes.length) {
+      ctx.strokeStyle = c('--ok')
+      ctx.globalAlpha = 0.28
+      ctx.lineWidth = 1
+      for (const time of onsetTimes) {
+        const x = timeToX(time)
+        if (x < -1 || x > size.w + 1) continue
+        ctx.beginPath()
+        ctx.moveTo(x + 0.5, RULER_H)
+        ctx.lineTo(x + 0.5, minimapTop)
+        ctx.stroke()
       }
       ctx.globalAlpha = 1
     }
@@ -333,7 +351,7 @@ export function Timeline() {
       ctx.strokeStyle = c('--playhead')
       ctx.beginPath(); ctx.moveTo(playX + 0.5, minimapTop); ctx.lineTo(playX + 0.5, size.h); ctx.stroke()
     }
-  }, [size, view, project.anchors, project.timeSignatures, audioBuffer, peaks, parsedMidi, tsMarkers, selectedIds, selectedTsId, rubber, snapX, timeToX, xToTime])
+  }, [size, view, project.anchors, project.timeSignatures, audioBuffer, peaks, parsedMidi, onsetTimes, tsMarkers, selectedIds, selectedTsId, rubber, snapX, timeToX, xToTime])
 
   // ── interaction ────────────────────────────────────────────────────────
   const drag = useRef<DragState | null>(null)
@@ -379,6 +397,7 @@ export function Timeline() {
   const snapCandidates = (excluded: Set<string>): number[] => {
     const cands = [0, view.playheadSec]
     for (const a of project.anchors) if (!excluded.has(a.id)) cands.push(a.time)
+    for (const time of onsetTimes) cands.push(time)
     return cands
   }
 

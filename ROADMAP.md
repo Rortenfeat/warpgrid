@@ -76,15 +76,27 @@ instead of treating anchors as the only editable object.
 - Surface the smooth flag in the Inspector and, if useful, as a compact inline
   affordance on selected anchors.
 
-## Phase 3 — Assisted detection
+## Phase 3 — Assisted detection ◐
 
-- Snapping to audio transients.
-- `audio/onsetDetection.ts`: spectral-flux onsets over an STFT with adaptive
+- ✅ Snapping to audio transients.
+- ✅ `audio/onsetDetection.ts`: spectral-flux onsets over an STFT with adaptive
   threshold + peak-picking.
-- `audio/tempoEstimate.ts`: autocorrelation / inter-onset tempo tracking with
-  octave-error handling; per-window estimates for drifting tempo.
+- ◐ `audio/tempoEstimate.ts`: basic IOI tempo estimate; full per-window drift
+  tracking and octave-error handling remain future work.
 - MIDI note-onset tempo inference.
-- "Generate candidate anchors" → user accepts / nudges / deletes.
+- ✅ "Generate candidate anchors" → detected anchors can be nudged / deleted / 
+  converted through normal manual editing.
+- ◐ Backend/offline detection strategy:
+  - Add a lightweight backend adapter entry point for detection (REST/Socket),
+    so a Linux server can run Vamp/aubio/essentia workers and return onset/beat
+    events to the app.
+  - Keep the frontend detection pipeline source-agnostic: same internal
+    `OnsetResult` shape (`onsets + strength`) for local algorithm, imported
+    SV exports, and backend responses.
+  - Add user preference for provider priority: `local first`, `backend first`,
+    `fallback local`.
+  - Keep UX behavior: detected/imported events should stay as alignment guides first,
+    and only become anchors when the user confirms/accepts manually.
 
 ## Phase 4 — DAW project export
 
@@ -103,6 +115,14 @@ instead of treating anchors as the only editable object.
 - Move peak extraction and onset/tempo analysis to Web Workers.
 - Optional heavier detection backend (essentia.js / aubio-wasm) behind the
   existing detection interfaces.
+- Add a backend analysis service mode in deployment docs:
+  - Containerized Linux service stack with audio upload + analysis queue.
+  - Pluggable detector engines (Vamp plugin host, aubio, Essentia, etc.) behind
+    one normalized response contract.
+  - Signed/size-limited upload + timeout + cancellation + retry strategy for
+    long files.
+  - Cache analysis results by file fingerprint so repeat uploads can reuse prior
+    detections.
 - Session save/load (serialize the project JSON).
 
 ---

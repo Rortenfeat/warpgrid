@@ -4,7 +4,9 @@ import { immer } from 'zustand/middleware/immer'
 import { createEmptyProject } from '../core/types'
 import type { Project, SourceMeta, WarpAnchor, TimeSignatureChange, Id, SegmentCurve } from '../core/types'
 import type { WaveformPeaks } from '../audio/peaks'
+import type { OnsetResult } from '../audio/onsetDetection'
 import type { ParsedMidi } from '../midi/parseMidi'
+import { timeToBeat } from '../core/tempoMap'
 import { sortedTimeSignatures } from '../core/timeSignature'
 import { setSegmentBpmEdits } from '../core/tempoEdit'
 
@@ -23,6 +25,7 @@ export interface MediaEntry {
   kind: 'audio' | 'midi'
   audioBuffer?: AudioBuffer
   peaks?: WaveformPeaks
+  onsets?: OnsetResult
   parsedMidi?: ParsedMidi
 }
 
@@ -62,6 +65,9 @@ export interface AppState {
   // ── source import ──────────────────────────────────────────────
   addAudioSource: (meta: Omit<SourceMeta, 'id' | 'kind'>, media: Omit<MediaEntry, 'kind'>) => void
   addMidiSource: (meta: Omit<SourceMeta, 'id' | 'kind'>, parsedMidi: ParsedMidi) => void
+  setAudioOnsets: (sourceId: Id, onsets: OnsetResult) => void
+  clearAudioOnsets: (sourceId: Id) => void
+  generateCandidateAnchors: (sourceId?: Id) => Id[]
 
   // ── anchors (the warp grid) ────────────────────────────────────
   /** Add an anchor; returns the new id so callers can select it. */
@@ -141,6 +147,61 @@ export const useProjectStore = create<AppState>()(
           s.project.ppq = parsedMidi.ppq
           s.status = `Loaded MIDI “${meta.name}” — ${meta.trackCount} tracks, ${meta.noteCount} notes`
         }),
+
+      setAudioOnsets: (sourceId, onsets) =>
+        set((s) => {
+          const entry = s.media[sourceId]
+          if (!entry) return
+          entry.onsets = onsets
+          s.status = `Detected ${onsets.onsets.length} audio transients`
+        }),
+
+      clearAudioOnsets: (sourceId) =>
+        set((s) => {
+          const entry = s.media[sourceId]
+          if (!entry) return
+          entry.onsets = { onsets: [], strength: [] }
+          s.status = `Cleared transient guide points`
+        }),
+
+      generateCandidateAnchors: (sourceId) => {
+        const state = get()
+        const source = sourceId
+          ? state.project.sources.find((s) => s.id === sourceId)
+          : state.project.sources.find((s) => state.media[s.id]?.onsets)
+        const onsets = source ? state.media[source.id]?.onsets : undefined
+        if (!onsets || onsets.onsets.length === 0) return []
+        const existingBeats = new Set(state.project.anchors.map((a) => Math.round(a.beat * 1000) / 1000))
+        const existingTimes = state.project.anchors.map((a) => a.time)
+        const selected = onsets.onsets
+          .map((time, i) => ({ time, strength: onsets.strength[i] ?? 0 }))
+          .filter((o) => o.strength >= 0.12)
+          .sort((a, b) => b.strength - a.strength)
+          .slice(0, 160)
+          .sort((a, b) => a.time - b.time)
+        const ids: Id[] = []
+        const baseAnchors = state.project.anchors
+        const anchors: WarpAnchor[] = []
+        for (const onset of selected) {
+          if (existingTimes.some((time) => Math.abs(time - onset.time) < 0.04)) continue
+          const beat = Math.max(0, Math.round(timeToBeat(onset.time, baseAnchors)))
+          const beatKey = Math.round(beat * 1000) / 1000
+          if (existingBeats.has(beatKey)) continue
+          const id = newId('anchor')
+          ids.push(id)
+          existingBeats.add(beatKey)
+          existingTimes.push(onset.time)
+          anchors.push({ id, beat, time: onset.time, curve: 'constant', origin: 'detected' })
+        }
+        if (ids.length === 0) return []
+        set((s) => {
+          s.project.anchors.push(...anchors)
+          s.project.anchors = normalizeAnchors(s.project.anchors)
+          s.selection = { kind: 'anchors', anchorIds: ids }
+          s.status = `Generated ${ids.length} candidate anchors from detected transients`
+        })
+        return ids
+      },
 
       addAnchor: (beat, time) => {
         const id = newId('anchor')

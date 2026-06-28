@@ -24,8 +24,10 @@ centered-playhead follow mode, direct bar-line dragging that automatically
 creates anchors, ripple drag by default, right-click deletion, snapping,
 keyboard nudging, numeric segment BPM editing, time-signature editing,
 anchor-level smooth tempo, contextual Inspector, and single-step undo for drag
-gestures. Full MIDI piano-roll polish, detection, and full DAW-project export
-remain stubbed or deferred. See [ROADMAP.md](./ROADMAP.md).
+gestures. Phase 3 has a first assisted-detection pass: audio transient
+detection, candidate anchors, and transient snapping. Full MIDI piano-roll
+polish, deeper beat tracking, and full DAW-project export remain stubbed or
+deferred. See [ROADMAP.md](./ROADMAP.md).
 
 ## Quick start
 
@@ -68,7 +70,7 @@ Warp anchors  ◄── drag bar lines / anchors (Timeline canvas)
 |---|---|---|
 | Core model | `src/core/` | `types.ts`, `tempoMap.ts` (beat↔time math), `timeSignature.ts` |
 | State | `src/state/useProjectStore.ts` | Zustand + immer; undo/redo via zundo (project only) |
-| Audio | `src/audio/` | `decode`, `peaks`, `onsetDetection`*, `tempoEstimate`* |
+| Audio | `src/audio/` | `decode`, `peaks`, `onsetDetection`, `tempoEstimate` |
 | MIDI | `src/midi/` | `parseMidi`, `writeMidi` |
 | Export | `src/export/` | `exportMidi`, `exportReaper`*, `exportAbleton`*, `exportTempoMap` |
 | UI | `src/components/` | Toolbar · Timeline · TempoLane · TransportBar · StatusBar · ImportDropzone · ExportPanel |
@@ -81,10 +83,11 @@ Warp anchors  ◄── drag bar lines / anchors (Timeline canvas)
 |---|---|
 | Import | Drag a file onto the window, or **Import…** |
 | Add warp anchor | Drag a bar line; the line becomes an anchor automatically |
+| Generate candidates | **Detect** analyzes audio transients and adds detected candidate anchors |
 | Warp bar line | Drag a bar line directly |
 | Warp anchor | Default: drag an anchor and downstream anchors move with it |
 | Isolated anchor drag | Hold **Shift** while dragging to keep downstream anchors fixed |
-| Snapping bypass | Hold **Ctrl** while dragging |
+| Snapping bypass | Hold **Ctrl** while dragging; otherwise anchors can snap to other anchors, playhead, origin, and detected transients |
 | Select | Click an anchor · **Shift+Click** to multi-select · drag a box to rubber-band |
 | Nudge selection | **← / →** (hold **Shift** for ×10) |
 | Delete anchor | Right-click an anchor, or select + **Delete** |
