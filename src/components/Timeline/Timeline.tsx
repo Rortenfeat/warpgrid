@@ -9,12 +9,13 @@ import {
 import { beatToTime, timeToBeat } from '../../core/tempoMap'
 import { snapTime } from '../../core/tempoEdit'
 import { barLengthInQuarters, sortedTimeSignatures, barStartInQuarters } from '../../core/timeSignature'
-import type { WaveformPeaks } from '../../audio/peaks'
+import type { WaveformPeakLevel, WaveformPeaks } from '../../audio/peaks'
 import type { ParsedMidi } from '../../midi/parseMidi'
 
 const ANCHOR_HIT_PX = 7
 const BAR_HIT_PX = 6
 const RULER_H = 22
+const MINIMAP_H = 36
 const DRAG_THRESHOLD_PX = 4
 const SNAP_PX = 7
 
@@ -43,6 +44,7 @@ interface PendingEmpty {
 }
 
 interface PanState {
+  mode: 'middle' | 'minimap'
   startX: number
   startScrollSec: number
 }
@@ -80,17 +82,19 @@ export function Timeline() {
   )
   const selectedTsId = selection.kind === 'timeSignature' ? selection.timeSignatureId : undefined
 
-  const { peaks, parsedMidi, contentDuration } = useMemo(() => {
+  const { audioBuffer, peaks, parsedMidi, contentDuration } = useMemo(() => {
+    let audioBuffer: AudioBuffer | undefined
     let peaks: WaveformPeaks | undefined
     let parsedMidi: ParsedMidi | undefined
     let dur = 0
     for (const src of project.sources) {
       const m = media[src.id]
+      if (m?.audioBuffer) audioBuffer = m.audioBuffer
       if (m?.peaks) peaks = m.peaks
       if (m?.parsedMidi) parsedMidi = m.parsedMidi
       dur = Math.max(dur, src.duration)
     }
-    return { peaks, parsedMidi, contentDuration: dur || 8 }
+    return { audioBuffer, peaks, parsedMidi, contentDuration: dur || 8 }
   }, [project.sources, media])
 
   useEffect(() => {
@@ -104,6 +108,7 @@ export function Timeline() {
 
   const timeToX = useCallbackRef((t: number) => (t - view.scrollSec) * view.pxPerSecond)
   const xToTime = useCallbackRef((x: number) => view.scrollSec + x / view.pxPerSecond)
+  const minimapTopFor = useCallbackRef(() => Math.max(RULER_H + 40, size.h - MINIMAP_H))
 
   useEffect(() => {
     if (!view.followPlayhead || size.w === 0) return
@@ -134,25 +139,33 @@ export function Timeline() {
     const css = getComputedStyle(document.documentElement)
     const c = (name: string) => css.getPropertyValue(name).trim()
     const laneTop = RULER_H
-    const laneH = size.h - RULER_H
+    const minimapTop = Math.max(RULER_H + 40, size.h - MINIMAP_H)
+    const laneH = Math.max(20, minimapTop - RULER_H)
 
     ctx.fillStyle = c('--bg-1')
     ctx.fillRect(0, 0, size.w, RULER_H)
 
     // ── waveform ──
-    if (peaks) {
-      const mid = laneTop + laneH / 2
-      ctx.fillStyle = c('--wave')
-      for (let px = 0; px < size.w; px++) {
-        const t0 = xToTime(px)
-        const bucket = Math.floor((t0 / peaks.duration) * peaks.buckets)
-        if (bucket < 0 || bucket >= peaks.buckets) continue
-        const min = peaks.data[bucket * 2]
-        const max = peaks.data[bucket * 2 + 1]
-        const yMin = mid - max * (laneH / 2) * 0.92
-        const yMax = mid - min * (laneH / 2) * 0.92
-        ctx.fillRect(px, yMin, 1, Math.max(1, yMax - yMin))
-      }
+    if (audioBuffer && shouldDrawRawWaveform(audioBuffer, view.pxPerSecond)) {
+      drawRawWaveform(ctx, audioBuffer, {
+        width: size.w,
+        laneTop,
+        laneH,
+        scrollSec: view.scrollSec,
+        pxPerSecond: view.pxPerSecond,
+        waveColor: c('--wave'),
+        dividerColor: c('--line'),
+      })
+    } else if (peaks) {
+      drawPeakWaveform(ctx, peaks, {
+        width: size.w,
+        laneTop,
+        laneH,
+        scrollSec: view.scrollSec,
+        pxPerSecond: view.pxPerSecond,
+        waveColor: c('--wave'),
+        dividerColor: c('--line'),
+      })
     }
 
     // ── MIDI notes ──
@@ -165,10 +178,12 @@ export function Timeline() {
         for (const n of tr.notes) {
           const x = timeToX(n.time)
           const w = Math.max(2, n.duration * view.pxPerSecond)
-          const y = laneTop + (1 - (n.midi - lo) / span) * (laneH - 8) + 4
+          const y = laneTop + (1 - (n.midi - lo) / span) * (laneH - 10) + 5
+          ctx.globalAlpha = 0.35 + Math.min(0.65, n.velocity ?? 0.8)
           ctx.fillRect(x, y - 2, w, 3)
         }
       }
+      ctx.globalAlpha = 1
     }
 
     // ── beat grid ──
@@ -184,7 +199,7 @@ export function Timeline() {
       ctx.lineWidth = 1
       ctx.beginPath()
       ctx.moveTo(x + 0.5, isBar ? 0 : RULER_H)
-      ctx.lineTo(x + 0.5, size.h)
+      ctx.lineTo(x + 0.5, minimapTop)
       ctx.stroke()
       if (isBar) {
         ctx.fillStyle = c('--text-2')
@@ -229,7 +244,7 @@ export function Timeline() {
       ctx.lineWidth = sel ? 2.5 : 2
       ctx.beginPath()
       ctx.moveTo(x + 0.5, RULER_H)
-      ctx.lineTo(x + 0.5, size.h)
+      ctx.lineTo(x + 0.5, minimapTop)
       ctx.stroke()
       ctx.fillStyle = sel ? c('--accent') : baseColor
       ctx.beginPath()
@@ -263,10 +278,62 @@ export function Timeline() {
       ctx.lineWidth = 1
       ctx.beginPath()
       ctx.moveTo(px + 0.5, 0)
-      ctx.lineTo(px + 0.5, size.h)
+      ctx.lineTo(px + 0.5, minimapTop)
       ctx.stroke()
     }
-  }, [size, view, project.anchors, project.timeSignatures, peaks, parsedMidi, tsMarkers, selectedIds, selectedTsId, rubber, snapX, timeToX, xToTime])
+
+    // ── minimap ──
+    ctx.fillStyle = c('--bg-2')
+    ctx.fillRect(0, minimapTop, size.w, MINIMAP_H)
+    ctx.strokeStyle = c('--line')
+    ctx.beginPath(); ctx.moveTo(0, minimapTop + 0.5); ctx.lineTo(size.w, minimapTop + 0.5); ctx.stroke()
+
+    if (peaks) {
+      const level = smallestPeakLevel(peaks)
+      const mid = minimapTop + MINIMAP_H / 2
+      ctx.fillStyle = c('--wave-hi')
+      for (let px = 0; px < size.w; px++) {
+        const t = (px / Math.max(1, size.w)) * peaks.duration
+        const bucket = Math.floor((t / peaks.duration) * level.buckets)
+        if (bucket < 0 || bucket >= level.buckets) continue
+        let min = 0
+        let max = 0
+        const channels = Math.max(1, peaks.channels ?? 1)
+        for (let ch = 0; ch < channels; ch++) {
+          const idx = (ch * level.buckets + bucket) * 2
+          min = Math.min(min, level.data[idx])
+          max = Math.max(max, level.data[idx + 1])
+        }
+        const yMin = mid - max * (MINIMAP_H / 2) * 0.72
+        const yMax = mid - min * (MINIMAP_H / 2) * 0.72
+        ctx.fillRect(px, yMin, 1, Math.max(1, yMax - yMin))
+      }
+    } else if (parsedMidi && contentDuration > 0) {
+      ctx.fillStyle = c('--accent-dim')
+      ctx.globalAlpha = 0.55
+      for (const tr of parsedMidi.midi.tracks) {
+        for (const n of tr.notes) {
+          const x = (n.time / contentDuration) * size.w
+          const w = Math.max(1, (n.duration / contentDuration) * size.w)
+          ctx.fillRect(x, minimapTop + 8, w, MINIMAP_H - 16)
+        }
+      }
+      ctx.globalAlpha = 1
+    }
+
+    const overviewDuration = Math.max(0.001, contentDuration)
+    const viewX = (view.scrollSec / overviewDuration) * size.w
+    const viewW = (size.w / view.pxPerSecond / overviewDuration) * size.w
+    const playX = (view.playheadSec / overviewDuration) * size.w
+    ctx.fillStyle = c('--accent-soft')
+    ctx.fillRect(viewX, minimapTop + 3, viewW, MINIMAP_H - 6)
+    ctx.strokeStyle = c('--accent')
+    ctx.strokeRect(viewX + 0.5, minimapTop + 3.5, viewW, MINIMAP_H - 7)
+    if (playX >= 0 && playX <= size.w) {
+      ctx.strokeStyle = c('--playhead')
+      ctx.beginPath(); ctx.moveTo(playX + 0.5, minimapTop); ctx.lineTo(playX + 0.5, size.h); ctx.stroke()
+    }
+  }, [size, view, project.anchors, project.timeSignatures, audioBuffer, peaks, parsedMidi, tsMarkers, selectedIds, selectedTsId, rubber, snapX, timeToX, xToTime])
 
   // ── interaction ────────────────────────────────────────────────────────
   const drag = useRef<DragState | null>(null)
@@ -346,6 +413,13 @@ export function Timeline() {
     }
   }
 
+  const scrollToMinimapX = (x: number) => {
+    const duration = Math.max(0.001, contentDuration)
+    const viewportSec = size.w / view.pxPerSecond
+    const centerTime = (Math.min(Math.max(0, x), size.w) / Math.max(1, size.w)) * duration
+    setTimelineScroll(centerTime - viewportSec / 2)
+  }
+
   const seekTo = (time: number) => {
     const playheadSec = Math.max(0, time)
     setView({ playheadSec })
@@ -353,6 +427,7 @@ export function Timeline() {
   }
 
   const hoverCursor = (x: number, y: number): string => {
+    if (y >= minimapTopFor()) return 'grab'
     if (anchorAt(x)) return 'ew-resize'
     if (y >= RULER_H && barLineAt(x)) return 'col-resize'
     return 'crosshair'
@@ -422,9 +497,17 @@ export function Timeline() {
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
 
+    if (e.button === 0 && y >= minimapTopFor()) {
+      scrollToMinimapX(x)
+      pan.current = { mode: 'minimap', startX: x, startScrollSec: view.scrollSec }
+      setCursor('grabbing')
+      canvasRef.current!.setPointerCapture(e.pointerId)
+      return
+    }
+
     if (e.button === 1) {
       e.preventDefault()
-      pan.current = { startX: x, startScrollSec: view.scrollSec }
+      pan.current = { mode: 'middle', startX: x, startScrollSec: view.scrollSec }
       setCursor('grabbing')
       canvasRef.current!.setPointerCapture(e.pointerId)
       return
@@ -464,8 +547,11 @@ export function Timeline() {
     const y = e.clientY - rect.top
 
     if (pan.current) {
-      const nextScroll = pan.current.startScrollSec - (x - pan.current.startX) / view.pxPerSecond
-      setTimelineScroll(nextScroll)
+      if (pan.current.mode === 'minimap') scrollToMinimapX(x)
+      else {
+        const nextScroll = pan.current.startScrollSec - (x - pan.current.startX) / view.pxPerSecond
+        setTimelineScroll(nextScroll)
+      }
       return
     }
 
@@ -627,4 +713,87 @@ function barFractional(beat: number, tsList: ReturnType<typeof sortedTimeSignatu
     cursorBeat = segEndBeat
   }
   return bars
+}
+
+function pickPeakLevel(peaks: WaveformPeaks, pxPerSecond: number): WaveformPeakLevel {
+  const levels = peaks.levels?.length ? peaks.levels : [{ data: peaks.data, buckets: peaks.buckets }]
+  const desiredBuckets = Math.max(1, peaks.duration * pxPerSecond * 1.5)
+  return [...levels].sort((a, b) => a.buckets - b.buckets).find((level) => level.buckets >= desiredBuckets) ?? levels[levels.length - 1]
+}
+
+function smallestPeakLevel(peaks: WaveformPeaks): WaveformPeakLevel {
+  const levels = peaks.levels?.length ? peaks.levels : [{ data: peaks.data, buckets: peaks.buckets }]
+  return [...levels].sort((a, b) => a.buckets - b.buckets)[0]
+}
+
+function shouldDrawRawWaveform(buffer: AudioBuffer, pxPerSecond: number): boolean {
+  return buffer.sampleRate / pxPerSecond <= 4096
+}
+
+interface WaveformDrawOptions {
+  width: number
+  laneTop: number
+  laneH: number
+  scrollSec: number
+  pxPerSecond: number
+  waveColor: string
+  dividerColor: string
+}
+
+function drawRawWaveform(ctx: CanvasRenderingContext2D, buffer: AudioBuffer, opts: WaveformDrawOptions) {
+  const channels = Math.max(1, Math.min(buffer.numberOfChannels, 2))
+  ctx.fillStyle = opts.waveColor
+  drawWaveformChannels(ctx, channels, opts, (ch, px) => {
+    const startTime = opts.scrollSec + px / opts.pxPerSecond
+    const endTime = opts.scrollSec + (px + 1) / opts.pxPerSecond
+    const start = Math.max(0, Math.floor(startTime * buffer.sampleRate))
+    const end = Math.min(buffer.length, Math.max(start + 1, Math.ceil(endTime * buffer.sampleRate)))
+    if (start >= buffer.length || end <= 0) return null
+    const samples = buffer.getChannelData(ch % buffer.numberOfChannels)
+    let min = 0
+    let max = 0
+    for (let i = start; i < end; i++) {
+      const v = samples[i]
+      if (v < min) min = v
+      if (v > max) max = v
+    }
+    return { min, max }
+  })
+}
+
+function drawPeakWaveform(ctx: CanvasRenderingContext2D, peaks: WaveformPeaks, opts: WaveformDrawOptions) {
+  const level = pickPeakLevel(peaks, opts.pxPerSecond)
+  const channels = Math.max(1, Math.min(peaks.channels ?? 1, 2))
+  ctx.fillStyle = opts.waveColor
+  drawWaveformChannels(ctx, channels, opts, (ch, px) => {
+    const t = opts.scrollSec + px / opts.pxPerSecond
+    const bucket = Math.floor((t / peaks.duration) * level.buckets)
+    if (bucket < 0 || bucket >= level.buckets) return null
+    const idx = ((ch % (peaks.channels ?? 1)) * level.buckets + bucket) * 2
+    return { min: level.data[idx], max: level.data[idx + 1] }
+  })
+}
+
+function drawWaveformChannels(
+  ctx: CanvasRenderingContext2D,
+  channels: number,
+  opts: WaveformDrawOptions,
+  valueAt: (channel: number, px: number) => { min: number; max: number } | null,
+) {
+  for (let ch = 0; ch < channels; ch++) {
+    const chTop = opts.laneTop + (opts.laneH / channels) * ch
+    const chH = opts.laneH / channels
+    const mid = chTop + chH / 2
+    ctx.strokeStyle = opts.dividerColor
+    if (channels > 1 && ch > 0) {
+      ctx.beginPath(); ctx.moveTo(0, chTop + 0.5); ctx.lineTo(opts.width, chTop + 0.5); ctx.stroke()
+    }
+    for (let px = 0; px < opts.width; px++) {
+      const v = valueAt(ch, px)
+      if (!v) continue
+      const yMin = mid - v.max * (chH / 2) * 0.86
+      const yMax = mid - v.min * (chH / 2) * 0.86
+      ctx.fillRect(px, yMin, 1, Math.max(1, yMax - yMin))
+    }
+  }
 }

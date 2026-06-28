@@ -17,14 +17,15 @@ Then **export** a tempo map as MIDI (with tempo + time-signature meta) or a DAW 
 
 ## Status
 
-**Phase 2.5 — UX reset & warp editing model.** The current build has the manual
-correction base plus the dedicated Warpgrid workflow: light UI, stronger
-transport controls, centered-playhead follow mode, direct bar-line dragging that
-automatically creates anchors, ripple drag by default, right-click deletion,
-snapping, keyboard nudging, numeric segment BPM editing, time-signature editing,
-contextual Inspector, and single-step undo for drag gestures. Detection,
-anchor-level smooth tempo, and full DAW-project export remain stubbed. See
-[ROADMAP.md](./ROADMAP.md).
+**Phase 1 partial + Phase 2.5 UX reset.** The current build has polished
+waveform rendering with stereo/multi-resolution peaks, a minimap, MIDI playback
+via a lightweight Web Audio synth, and the manual correction workflow: light UI,
+centered-playhead follow mode, direct bar-line dragging that automatically
+creates anchors, ripple drag by default, right-click deletion, snapping,
+keyboard nudging, numeric segment BPM editing, time-signature editing,
+contextual Inspector, and single-step undo for drag gestures. Full MIDI
+piano-roll polish, detection, anchor-level smooth tempo, and full DAW-project
+export remain stubbed or deferred. See [ROADMAP.md](./ROADMAP.md).
 
 ## Quick start
 
@@ -92,8 +93,8 @@ Warp anchors  ◄── drag bar lines / anchors (Timeline canvas)
 | Smooth tempo | Planned: enable on an anchor to smooth the segment from the previous anchor to it |
 | Time signatures | **+ Time Sig** (at playhead bar); click a ruler marker to edit/delete |
 | Select all / clear | **Ctrl+A** / **Esc** |
-| Zoom / scroll | **Ctrl+Wheel** / wheel; Ctrl+Wheel is captured so the browser page does not zoom |
-| Play / Stop / Seek | Transport bar (audio), or **Space** to toggle play/pause; **Center** keeps the playhead fixed in the viewport |
+| Zoom / scroll | **Ctrl+Wheel** / wheel; drag the minimap to reposition the viewport |
+| Play / Stop / Seek | Transport bar (audio or MIDI), or **Space** to toggle play/pause; **Center** keeps the playhead fixed in the viewport |
 | Undo / Redo | **Ctrl+Z** / **Ctrl+Shift+Z** |
 | Shortcuts help | **?** |
 

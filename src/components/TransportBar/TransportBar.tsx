@@ -12,8 +12,8 @@ function getCtx(): AudioContext {
 /**
  * Transport: play / stop audio, scrub, and zoom. Playback drives the shared
  * playhead (view.playheadSec) via requestAnimationFrame so the Timeline and
- * TempoLane stay in sync. When no audio is loaded the play button is disabled
- * (MIDI playback is a Phase 1 addition).
+ * TempoLane stay in sync. Audio files play as buffers; MIDI files use a simple
+ * Web Audio synth so imported MIDI can be checked without a DAW.
  */
 export function TransportBar() {
   const media = useProjectStore((s) => s.media)
@@ -28,13 +28,36 @@ export function TransportBar() {
     }
     return undefined
   }, [sources, media])
+
+  const midiNotes = useMemo(() => {
+    const notes: MidiPlaybackNote[] = []
+    for (const src of sources) {
+      const parsed = media[src.id]?.parsedMidi
+      if (!parsed) continue
+      parsed.midi.tracks.forEach((track, trackIndex) => {
+        for (const note of track.notes) {
+          notes.push({
+            time: note.time,
+            duration: note.duration,
+            midi: note.midi,
+            velocity: note.velocity ?? 0.75,
+            trackIndex,
+          })
+        }
+      })
+    }
+    return notes.sort((a, b) => a.time - b.time)
+  }, [sources, media])
+
   const duration = useMemo(
     () => audioBuffer?.duration ?? sources.reduce((max, src) => Math.max(max, src.duration), 0),
     [audioBuffer, sources],
   )
+  const canPlay = Boolean(audioBuffer || midiNotes.length)
 
   const [playing, setPlaying] = useState(false)
   const nodeRef = useRef<AudioBufferSourceNode | null>(null)
+  const midiNodesRef = useRef<Array<{ osc: OscillatorNode; gain: GainNode }>>([])
   const rafRef = useRef<number | null>(null)
   const startedAtRef = useRef(0)
   const offsetRef = useRef(0)
@@ -48,35 +71,49 @@ export function TransportBar() {
       nodeRef.current.disconnect()
       nodeRef.current = null
     }
+    for (const { osc, gain } of midiNodesRef.current) {
+      try { osc.stop() } catch { /* already stopped */ }
+      osc.disconnect()
+      gain.disconnect()
+    }
+    midiNodesRef.current = []
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
     rafRef.current = null
     setPlaying(false)
   }, [])
 
   const playFrom = useCallback((startAt: number) => {
-    if (!audioBuffer) return
+    if (!canPlay || duration <= 0) return
     const ctx = getCtx()
     void ctx.resume()
-    const node = ctx.createBufferSource()
-    node.buffer = audioBuffer
-    node.connect(ctx.destination)
-    const offset = Math.min(Math.max(0, startAt), audioBuffer.duration - 0.01)
+    const offset = Math.min(Math.max(0, startAt), Math.max(0, duration - 0.01))
     offsetRef.current = Math.max(0, offset)
     startedAtRef.current = ctx.currentTime
     setView({ playheadSec: offsetRef.current })
-    node.start(0, offsetRef.current)
-    node.onended = () => { if (nodeRef.current === node) stop() }
-    nodeRef.current = node
+
+    if (audioBuffer) {
+      const node = ctx.createBufferSource()
+      node.buffer = audioBuffer
+      node.connect(ctx.destination)
+      node.start(0, Math.min(offsetRef.current, audioBuffer.duration - 0.01))
+      node.onended = () => {
+        if (nodeRef.current !== node) return
+        node.disconnect()
+        nodeRef.current = null
+      }
+      nodeRef.current = node
+    }
+    midiNodesRef.current = scheduleMidi(ctx, midiNotes, offsetRef.current, duration)
     setPlaying(true)
 
     const tick = () => {
       const t = offsetRef.current + (ctx.currentTime - startedAtRef.current)
       setView({ playheadSec: t })
-      if (t >= audioBuffer.duration) { stop(); return }
+      if (t >= duration) { stop(); return }
       rafRef.current = requestAnimationFrame(tick)
     }
     rafRef.current = requestAnimationFrame(tick)
-  }, [audioBuffer, setView, stop])
+  }, [audioBuffer, canPlay, duration, midiNotes, setView, stop])
 
   const play = useCallback(() => playFrom(view.playheadSec), [playFrom, view.playheadSec])
 
@@ -128,7 +165,7 @@ export function TransportBar() {
         {playing ? (
           <button className={`${styles.iconBtn} primary`} onClick={stop} title="Stop">⏸</button>
         ) : (
-          <button className={`${styles.iconBtn} primary`} onClick={play} disabled={!audioBuffer} title="Play">▶</button>
+          <button className={`${styles.iconBtn} primary`} onClick={play} disabled={!canPlay} title="Play">▶</button>
         )}
         <button className={styles.iconBtn} onClick={() => skip(1)} disabled={!duration} title="Forward 1 second">+1</button>
       </div>
@@ -165,4 +202,43 @@ export function TransportBar() {
       </div>
     </footer>
   )
+}
+
+interface MidiPlaybackNote {
+  time: number
+  duration: number
+  midi: number
+  velocity: number
+  trackIndex: number
+}
+
+function scheduleMidi(ctx: AudioContext, notes: MidiPlaybackNote[], offset: number, duration: number) {
+  const scheduled: Array<{ osc: OscillatorNode; gain: GainNode }> = []
+  const now = ctx.currentTime + 0.025
+  const horizon = duration + 0.001
+
+  for (const note of notes) {
+    const end = note.time + note.duration
+    if (end < offset || note.time > horizon) continue
+    const startAt = now + Math.max(0, note.time - offset)
+    const stopAt = now + Math.max(0.03, end - offset)
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = note.trackIndex % 2 === 0 ? 'triangle' : 'sine'
+    osc.frequency.value = midiToFrequency(note.midi)
+    gain.gain.setValueAtTime(0.0001, startAt)
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.01, note.velocity) * 0.045, startAt + 0.012)
+    gain.gain.setTargetAtTime(0.0001, Math.max(startAt + 0.02, stopAt - 0.035), 0.018)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start(startAt)
+    osc.stop(stopAt + 0.08)
+    scheduled.push({ osc, gain })
+  }
+
+  return scheduled
+}
+
+function midiToFrequency(midi: number): number {
+  return 440 * 2 ** ((midi - 69) / 12)
 }

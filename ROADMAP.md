@@ -13,12 +13,14 @@ app in a runnable state.
 - Undo/redo (project state).
 - Export: MIDI (tempo + time-sig meta) and CSV tempo map. Reaper/Ableton writers stubbed.
 
-## Phase 1 — Import & visualization
+## Phase 1 — Import & visualization ◐
 
-- Full waveform polish (multi-resolution peaks, stereo display).
-- Proper MIDI piano-roll (velocity, per-track color, note labels).
-- Smooth zoom/scroll, minimap, follow-playhead.
-- MIDI playback (Tone.js) alongside audio.
+- ✅ Waveform polish: multi-resolution peaks and stereo display.
+- ◐ MIDI piano-roll: lightweight note display with velocity tinting is present;
+  full per-track color, note labels, and piano-key affordances are deferred.
+- ✅ Smooth zoom/scroll basics, minimap, and follow-playhead / centered-playhead
+  viewport behavior.
+- ✅ MIDI playback alongside audio via a lightweight Web Audio synth.
 
 ## Phase 2 — Grid & manual correction (the core craft) ✅
 
