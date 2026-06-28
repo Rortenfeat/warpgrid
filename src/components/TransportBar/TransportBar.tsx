@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import styles from './TransportBar.module.css'
 import { useProjectStore } from '../../state/useProjectStore'
+import { scheduleMetronome } from '../../audio/metronome'
 
 /** Lazily-created shared AudioContext for playback. */
 let sharedCtx: AudioContext | null = null
@@ -18,6 +19,8 @@ function getCtx(): AudioContext {
 export function TransportBar() {
   const media = useProjectStore((s) => s.media)
   const sources = useProjectStore((s) => s.project.sources)
+  const anchors = useProjectStore((s) => s.project.anchors)
+  const timeSignatures = useProjectStore((s) => s.project.timeSignatures)
   const view = useProjectStore((s) => s.view)
   const setView = useProjectStore((s) => s.setView)
 
@@ -53,17 +56,27 @@ export function TransportBar() {
     () => audioBuffer?.duration ?? sources.reduce((max, src) => Math.max(max, src.duration), 0),
     [audioBuffer, sources],
   )
-  const canPlay = Boolean(audioBuffer || midiNotes.length)
+  const canPlay = duration > 0 && Boolean(audioBuffer || midiNotes.length || view.metronomeEnabled)
 
   const [playing, setPlaying] = useState(false)
   const nodeRef = useRef<AudioBufferSourceNode | null>(null)
   const midiNodesRef = useRef<Array<{ osc: OscillatorNode; gain: GainNode }>>([])
+  const metronomeNodesRef = useRef<Array<{ osc: OscillatorNode; gain: GainNode }>>([])
   const rafRef = useRef<number | null>(null)
   const startedAtRef = useRef(0)
   const offsetRef = useRef(0)
   const playingRef = useRef(false)
 
   useEffect(() => { playingRef.current = playing }, [playing])
+
+  const stopMetronome = useCallback(() => {
+    for (const { osc, gain } of metronomeNodesRef.current) {
+      try { osc.stop() } catch { /* already stopped */ }
+      osc.disconnect()
+      gain.disconnect()
+    }
+    metronomeNodesRef.current = []
+  }, [])
 
   const stop = useCallback(() => {
     if (nodeRef.current) {
@@ -77,10 +90,11 @@ export function TransportBar() {
       gain.disconnect()
     }
     midiNodesRef.current = []
+    stopMetronome()
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
     rafRef.current = null
     setPlaying(false)
-  }, [])
+  }, [stopMetronome])
 
   const playFrom = useCallback((startAt: number) => {
     if (!canPlay || duration <= 0) return
@@ -104,6 +118,14 @@ export function TransportBar() {
       nodeRef.current = node
     }
     midiNodesRef.current = scheduleMidi(ctx, midiNotes, offsetRef.current, duration)
+    metronomeNodesRef.current = view.metronomeEnabled
+      ? scheduleMetronome(ctx, {
+        anchors,
+        timeSignatures,
+        startTime: offsetRef.current,
+        endTime: duration,
+      })
+      : []
     setPlaying(true)
 
     const tick = () => {
@@ -113,7 +135,7 @@ export function TransportBar() {
       rafRef.current = requestAnimationFrame(tick)
     }
     rafRef.current = requestAnimationFrame(tick)
-  }, [audioBuffer, canPlay, duration, midiNotes, setView, stop])
+  }, [anchors, audioBuffer, canPlay, duration, midiNotes, setView, stop, timeSignatures, view.metronomeEnabled])
 
   const play = useCallback(() => playFrom(view.playheadSec), [playFrom, view.playheadSec])
 
@@ -136,6 +158,21 @@ export function TransportBar() {
     setView({ pxPerSecond: Math.min(4000, Math.max(8, view.pxPerSecond * factor)) })
 
   const skip = (delta: number) => seek(view.playheadSec + delta)
+
+  const toggleMetronome = useCallback((enabled: boolean) => {
+    setView({ metronomeEnabled: enabled })
+    stopMetronome()
+    if (!enabled || !playingRef.current || duration <= 0) return
+    const ctx = getCtx()
+    void ctx.resume()
+    const startTime = Math.min(Math.max(0, view.playheadSec), duration)
+    metronomeNodesRef.current = scheduleMetronome(ctx, {
+      anchors,
+      timeSignatures,
+      startTime,
+      endTime: duration,
+    })
+  }, [anchors, duration, setView, stopMetronome, timeSignatures, view.playheadSec])
 
   useEffect(() => {
     const onToggle = () => togglePlayback()
@@ -185,6 +222,15 @@ export function TransportBar() {
       />
 
       <div className={styles.spacer} />
+
+      <label className={styles.follow}>
+        <input
+          type="checkbox"
+          checked={view.metronomeEnabled}
+          onChange={(e) => toggleMetronome(e.target.checked)}
+        />
+        Click
+      </label>
 
       <label className={styles.follow}>
         <input

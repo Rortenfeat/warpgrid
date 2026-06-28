@@ -39,6 +39,8 @@ export interface ViewState {
   playheadSec: number
   /** Keep the playhead fixed in the viewport center while the grid scrolls. */
   followPlayhead: boolean
+  /** Play a grid-derived click during transport playback. */
+  metronomeEnabled: boolean
 }
 
 /** What the Inspector is currently editing. */
@@ -129,7 +131,7 @@ export const useProjectStore = create<AppState>()(
     immer((set, get) => ({
       project: initialProject,
       media: {},
-      view: { pxPerSecond: 120, scrollSec: 0, playheadSec: 0, followPlayhead: true },
+      view: { pxPerSecond: 120, scrollSec: 0, playheadSec: 0, followPlayhead: true, metronomeEnabled: true },
       selection: emptySelection,
       status: 'Ready — drop an audio or MIDI file to begin.',
 
@@ -350,7 +352,7 @@ export const useProjectStore = create<AppState>()(
       reset: () => set((s) => {
         s.project = createEmptyProject()
         s.media = {}
-        s.view = { pxPerSecond: 120, scrollSec: 0, playheadSec: 0, followPlayhead: true }
+        s.view = { pxPerSecond: 120, scrollSec: 0, playheadSec: 0, followPlayhead: true, metronomeEnabled: true }
         s.selection = emptySelection
         s.status = 'Ready — drop an audio or MIDI file to begin.'
       }),
