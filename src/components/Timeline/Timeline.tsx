@@ -19,6 +19,7 @@ const RULER_H = 22
 const MINIMAP_H = 36
 const DRAG_THRESHOLD_PX = 4
 const SNAP_PX = 7
+const TRACK_COLORS = ['#38bdf8', '#a78bfa', '#34d399', '#f59e0b', '#fb7185', '#60a5fa', '#f97316', '#22d3ee']
 
 interface DragState {
   ids: string[]
@@ -110,6 +111,19 @@ export function Timeline() {
     return { audioBuffer, peaks, parsedMidi, onsetTimes, contentDuration: dur || 8 }
   }, [project.sources, media])
 
+  const midiEdgeTimes = useMemo(() => {
+    if (!parsedMidi) return [] as number[]
+    const edgeSet = new Set<number>()
+    for (const tr of parsedMidi.midi.tracks) {
+      for (const n of tr.notes) {
+        if (Number.isFinite(n.time)) edgeSet.add(n.time)
+        const end = n.time + (n.duration ?? 0)
+        if (Number.isFinite(end)) edgeSet.add(end)
+      }
+    }
+    return [...edgeSet].sort((a, b) => a - b)
+  }, [parsedMidi])
+
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
@@ -181,21 +195,39 @@ export function Timeline() {
       })
     }
 
-    // ── MIDI notes ──
+    // ── MIDI notes (track colored) ──
     if (parsedMidi) {
+      const getTrackColor = (trackIndex: number) => TRACK_COLORS[trackIndex % TRACK_COLORS.length]
       let lo = 127, hi = 0
       for (const tr of parsedMidi.midi.tracks) for (const n of tr.notes) { lo = Math.min(lo, n.midi); hi = Math.max(hi, n.midi) }
       const span = Math.max(1, hi - lo)
-      ctx.fillStyle = c('--accent-dim')
-      for (const tr of parsedMidi.midi.tracks) {
+      for (const [trackIndex, tr] of parsedMidi.midi.tracks.entries()) {
+        const color = getTrackColor(trackIndex)
         for (const n of tr.notes) {
           const x = timeToX(n.time)
           const w = Math.max(2, n.duration * view.pxPerSecond)
           const y = laneTop + (1 - (n.midi - lo) / span) * (laneH - 10) + 5
-          ctx.globalAlpha = 0.35 + Math.min(0.65, n.velocity ?? 0.8)
+          const alpha = 0.3 + Math.min(0.7, Math.max(0.2, n.velocity ?? 0.75))
+          ctx.globalAlpha = alpha
+          ctx.fillStyle = color
           ctx.fillRect(x, y - 2, w, 3)
         }
       }
+      ctx.globalAlpha = 1
+
+      // Note start/end reference lines (used as alignment guide candidates).
+      ctx.strokeStyle = c('--ok')
+      ctx.globalAlpha = 0.16
+      ctx.setLineDash([2, 4])
+      for (const time of midiEdgeTimes) {
+        const x = timeToX(time)
+        if (x < -1 || x > size.w + 1) continue
+        ctx.beginPath()
+        ctx.moveTo(x + 0.5, RULER_H)
+        ctx.lineTo(x + 0.5, minimapTop)
+        ctx.stroke()
+      }
+      ctx.setLineDash([])
       ctx.globalAlpha = 1
     }
 
@@ -340,7 +372,8 @@ export function Timeline() {
     } else if (parsedMidi && contentDuration > 0) {
       ctx.fillStyle = c('--accent-dim')
       ctx.globalAlpha = 0.55
-      for (const tr of parsedMidi.midi.tracks) {
+      for (const [trackIndex, tr] of parsedMidi.midi.tracks.entries()) {
+        ctx.fillStyle = TRACK_COLORS[trackIndex % TRACK_COLORS.length]
         for (const n of tr.notes) {
           const x = (n.time / contentDuration) * size.w
           const w = Math.max(1, (n.duration / contentDuration) * size.w)
@@ -362,7 +395,7 @@ export function Timeline() {
       ctx.strokeStyle = c('--playhead')
       ctx.beginPath(); ctx.moveTo(playX + 0.5, minimapTop); ctx.lineTo(playX + 0.5, size.h); ctx.stroke()
     }
-  }, [size, view, project.anchors, project.timeSignatures, audioBuffer, peaks, parsedMidi, onsetTimes, tsMarkers, selectedIds, selectedTsId, rubber, snapX, timeToX, xToTime])
+  }, [size, view, project.anchors, project.timeSignatures, audioBuffer, peaks, parsedMidi, onsetTimes, midiEdgeTimes, tsMarkers, selectedIds, selectedTsId, rubber, snapX, timeToX, xToTime])
 
   // ── interaction ────────────────────────────────────────────────────────
   const drag = useRef<DragState | null>(null)
@@ -480,6 +513,7 @@ export function Timeline() {
     const cands = [0, view.playheadSec]
     for (const a of project.anchors) if (!excluded.has(a.id)) cands.push(a.time)
     for (const time of onsetTimes) cands.push(time)
+    for (const time of midiEdgeTimes) cands.push(time)
     return cands
   }
 
