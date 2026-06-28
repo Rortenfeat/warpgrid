@@ -83,7 +83,7 @@ export function TempoLane() {
       ctx.fillRect(x0, 0, x1 - x0, size.h)
     })
 
-    // Tempo steps.
+    // Tempo curve.
     ctx.strokeStyle = c('--accent')
     ctx.lineWidth = 2
     ctx.beginPath()
@@ -91,9 +91,19 @@ export function TempoLane() {
     for (const seg of segments) {
       const x0 = xFor(seg.startTime)
       const x1 = xFor(isFinite(seg.endBeat) ? beatToTime(seg.endBeat, anchors) : view.scrollSec + size.w / view.pxPerSecond)
-      const y = yFor(seg.startBpm)
-      if (!started) { ctx.moveTo(x0, y); started = true } else { ctx.lineTo(x0, y) }
-      ctx.lineTo(x1, y)
+      if (seg.curve === 'ramp' && isFinite(seg.endBeat)) {
+        for (let i = 0; i <= 24; i++) {
+          const frac = i / 24
+          const beat = seg.startBeat + (seg.endBeat - seg.startBeat) * frac
+          const x = xFor(beatToTime(beat, anchors))
+          const y = yFor(seg.startBpm + (seg.endBpm - seg.startBpm) * frac)
+          if (!started) { ctx.moveTo(x, y); started = true } else { ctx.lineTo(x, y) }
+        }
+      } else {
+        const y = yFor(seg.startBpm)
+        if (!started) { ctx.moveTo(x0, y); started = true } else { ctx.lineTo(x0, y) }
+        ctx.lineTo(x1, y)
+      }
     }
     ctx.stroke()
 

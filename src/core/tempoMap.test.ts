@@ -89,6 +89,39 @@ describe('piecewise-constant tempo map', () => {
   })
 })
 
+describe('smooth destination anchors', () => {
+  const anchors = [
+    anchor(0, 0),
+    anchor(4, 2),
+    anchor(8, 6, { curve: 'ramp' }),
+  ]
+
+  it('uses the destination anchor curve for the preceding segment', () => {
+    const segs = deriveTempoSegments(anchors)
+    expect(segs[0]).toMatchObject({ startBeat: 0, endBeat: 4, curve: 'constant' })
+    expect(segs[1]).toMatchObject({ startBeat: 4, endBeat: 8, curve: 'ramp' })
+    expect(segs[1].startBpm).toBeCloseTo(120)
+    expect(segs[1].endBpm).toBeLessThan(60)
+  })
+
+  it('pins smooth segment endpoints exactly and changes tempo within the segment', () => {
+    expect(beatToTime(4, anchors)).toBeCloseTo(2)
+    expect(beatToTime(8, anchors)).toBeCloseTo(6)
+    expect(tempoAtBeat(4, anchors)).toBeCloseTo(120)
+    expect(tempoAtBeat(8, anchors)).toBeLessThan(60)
+    expect(beatToTime(6, anchors)).not.toBeCloseTo(4)
+  })
+
+  it('round-trips through smooth segments', () => {
+    for (const beat of [4, 4.5, 6, 7.25, 8]) {
+      expect(timeToBeat(beatToTime(beat, anchors), anchors)).toBeCloseTo(beat)
+    }
+    for (const time of [2, 2.4, 3.5, 5.5, 6]) {
+      expect(beatToTime(timeToBeat(time, anchors), anchors)).toBeCloseTo(time)
+    }
+  })
+})
+
 describe('deriveTempoSegments / deriveTempoEvents', () => {
   const anchors = [anchor(0, 0), anchor(4, 2), anchor(8, 6)]
 

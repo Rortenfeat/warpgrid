@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { temporal } from 'zundo'
 import { immer } from 'zustand/middleware/immer'
 import { createEmptyProject } from '../core/types'
-import type { Project, SourceMeta, WarpAnchor, TimeSignatureChange, Id } from '../core/types'
+import type { Project, SourceMeta, WarpAnchor, TimeSignatureChange, Id, SegmentCurve } from '../core/types'
 import type { WaveformPeaks } from '../audio/peaks'
 import type { ParsedMidi } from '../midi/parseMidi'
 import { sortedTimeSignatures } from '../core/timeSignature'
@@ -72,6 +72,8 @@ export interface AppState {
   moveAnchorsBy: (ids: Id[], deltaTime: number) => void
   /** Set an anchor's exact time (numeric entry). */
   setAnchorTime: (id: Id, time: number) => void
+  /** Set how the segment ending at this anchor behaves. */
+  setAnchorCurve: (id: Id, curve: SegmentCurve) => void
   removeAnchor: (id: Id) => void
   removeAnchors: (ids: Id[]) => void
   /** Retune the segment starting at `startId`, keeping downstream tempos. */
@@ -172,6 +174,13 @@ export const useProjectStore = create<AppState>()(
           if (!anchor) return
           anchor.time = time
           s.project.anchors = normalizeAnchors(s.project.anchors)
+        }),
+
+      setAnchorCurve: (id, curve) =>
+        set((s) => {
+          const anchor = s.project.anchors.find((a) => a.id === id)
+          if (!anchor) return
+          anchor.curve = curve
         }),
 
       removeAnchor: (id) =>

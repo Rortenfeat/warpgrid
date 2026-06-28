@@ -23,9 +23,9 @@ via a lightweight Web Audio synth, and the manual correction workflow: light UI,
 centered-playhead follow mode, direct bar-line dragging that automatically
 creates anchors, ripple drag by default, right-click deletion, snapping,
 keyboard nudging, numeric segment BPM editing, time-signature editing,
-contextual Inspector, and single-step undo for drag gestures. Full MIDI
-piano-roll polish, detection, anchor-level smooth tempo, and full DAW-project
-export remain stubbed or deferred. See [ROADMAP.md](./ROADMAP.md).
+anchor-level smooth tempo, contextual Inspector, and single-step undo for drag
+gestures. Full MIDI piano-roll polish, detection, and full DAW-project export
+remain stubbed or deferred. See [ROADMAP.md](./ROADMAP.md).
 
 ## Quick start
 
@@ -41,9 +41,10 @@ npm run build      # type-check + production build
 The whole app revolves around a **tempo map**: a bidirectional mapping between
 musical time (quarter-note beats) and real time (seconds), defined entirely by
 **warp anchors** — points that pin a beat to a moment in the audio. Between
-anchors the tempo is piecewise-constant, so beat↔time is exact and invertible.
-Everything else (bar lines, the tempo curve, the export) is derived from the
-anchors plus time-signature changes.
+anchors the tempo is exact and invertible: most segments are piecewise-constant,
+while anchors marked smooth use an exact linear-BPM ramp from the previous
+anchor into that anchor. Everything else (bar lines, the tempo curve, the
+export) is derived from the anchors plus time-signature changes.
 
 ```
  Import (audio / MIDI)
@@ -90,7 +91,7 @@ Warp anchors  ◄── drag bar lines / anchors (Timeline canvas)
 | Seek | When **Center** is off, click the timeline to move the playhead |
 | Pan viewport | Hold the middle mouse button and drag |
 | Edit segment tempo | Double-click the tempo lane, or use the Inspector |
-| Smooth tempo | Planned: enable on an anchor to smooth the segment from the previous anchor to it |
+| Smooth tempo | Enable **smooth** on an anchor to smooth the segment from the previous anchor to it |
 | Time signatures | **+ Time Sig** (at playhead bar); click a ruler marker to edit/delete |
 | Select all / clear | **Ctrl+A** / **Esc** |
 | Zoom / scroll | **Ctrl+Wheel** / wheel; drag the minimap to reposition the viewport |

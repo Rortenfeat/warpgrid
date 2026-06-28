@@ -66,7 +66,7 @@ instead of treating anchors as the only editable object.
 - Shortcuts overlay and README controls must be updated after the interaction
   change so the visible help matches the actual editing model.
 
-## Phase 2.6 — Smooth tempo anchors
+## Phase 2.6 — Smooth tempo anchors ✅
 
 - Smooth tempo is an anchor property, not a global segment type. If anchor N is
   marked smooth, the tempo between anchor N-1 and anchor N is interpolated

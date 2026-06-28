@@ -20,8 +20,8 @@ export type Id = string
  * A warp anchor pins a musical position (beat) to a real-time position
  * (seconds in the source media). Dragging an anchor is the core interaction.
  *
- * Between two adjacent anchors the tempo is determined by the segment that
- * follows the earlier anchor (see TempoSegment).
+ * `curve` belongs to this anchor as a destination: if anchor N is marked
+ * 'ramp', the segment from anchor N-1 to N is smoothed.
  */
 export interface WarpAnchor {
   id: Id
@@ -30,10 +30,9 @@ export interface WarpAnchor {
   /** Real-time position, in seconds from the source start. */
   time: number
   /**
-   * How tempo behaves across the segment that STARTS at this anchor and ends
-   * at the next anchor:
+   * How tempo behaves across the segment that ENDS at this anchor:
    *  - 'constant': one fixed BPM for the whole segment (piecewise-constant).
-   *  - 'ramp': BPM changes linearly from this anchor's tempo to the next's.
+   *  - 'ramp': BPM changes linearly across the segment.
    */
   curve: SegmentCurve
   /**

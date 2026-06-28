@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import styles from './InspectorBar.module.css'
 import { useProjectStore } from '../../state/useProjectStore'
 import { segmentBpmAt } from '../../core/tempoEdit'
+import { sortedAnchors } from '../../core/tempoMap'
 import { quarterBeatToBarBeat } from '../../core/timeSignature'
 
 /**
@@ -50,8 +51,10 @@ function Bar({ children }: { children: React.ReactNode }) {
 
 function AnchorInspector({ id }: { id: string }) {
   const anchor = useProjectStore((s) => s.project.anchors.find((a) => a.id === id))
+  const anchors = useProjectStore((s) => s.project.anchors)
   const timeSignatures = useProjectStore((s) => s.project.timeSignatures)
   const setAnchorTime = useProjectStore((s) => s.setAnchorTime)
+  const setAnchorCurve = useProjectStore((s) => s.setAnchorCurve)
   const removeAnchors = useProjectStore((s) => s.removeAnchors)
   const [time, setTime] = useState('')
 
@@ -59,6 +62,7 @@ function AnchorInspector({ id }: { id: string }) {
   if (!anchor) return <Bar><span className={styles.hint}>—</span></Bar>
 
   const { bar, beat } = quarterBeatToBarBeat(anchor.beat, timeSignatures)
+  const isFirstAnchor = sortedAnchors(anchors)[0]?.id === id
   const apply = () => {
     const t = parseFloat(time)
     if (isFinite(t)) setAnchorTime(id, t)
@@ -79,6 +83,15 @@ function AnchorInspector({ id }: { id: string }) {
           onBlur={apply}
         />
         s
+      </label>
+      <label className={styles.field} title="Smooth the tempo from the previous anchor into this anchor">
+        <input
+          type="checkbox"
+          checked={anchor.curve === 'ramp'}
+          disabled={isFirstAnchor}
+          onChange={(e) => setAnchorCurve(id, e.target.checked ? 'ramp' : 'constant')}
+        />
+        smooth
       </label>
       <button className={styles.danger} onClick={() => removeAnchors([id])}>Delete</button>
     </Bar>
