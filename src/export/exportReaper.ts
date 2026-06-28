@@ -1,4 +1,4 @@
-import { beatToTime, deriveTempoEvents, timeToBeat } from '../core/tempoMap'
+import { beatToTime, deriveTempoEvents } from '../core/tempoMap'
 import { barStartInQuarters, sortedTimeSignatures } from '../core/timeSignature'
 import type { Project, SegmentCurve, WarpAnchor } from '../core/types'
 
@@ -18,7 +18,11 @@ export function exportReaper(project: Project): string {
   const numerator = firstTs?.numerator ?? 4
   const denominator = firstTs?.denominator ?? 4
 
-  const points = mergeTempoAndSignaturePoints(events, project.anchors, sortedTs)
+  const timeOrigin = beatToTime(0, project.anchors)
+  const points = mergeTempoAndSignaturePoints(events, project.anchors, sortedTs).map((point) => ({
+    ...point,
+    time: normalizeExportTime(point.time - timeOrigin),
+  }))
 
   const signatureLookup = createSignatureLookup(sortedTs)
   const tempoPointLines = points.map((point, i) => {
@@ -33,8 +37,10 @@ export function exportReaper(project: Project): string {
       : `    PT ${point.time.toFixed(12)} ${point.bpm.toFixed(10)} ${shape}`
   })
 
-  const projectLength = points.length ? points[points.length - 1].time + 4 : 4
-  const sentinelLengthTicks = Math.max(4, Math.ceil(timeToBeat(projectLength, project.anchors))) * 480
+  const lastExportBeat = points.length ? Math.max(...points.map((point) => point.beat)) : 0
+  const projectEndBeat = Math.max(4, Math.ceil(lastExportBeat + 4))
+  const projectLength = Math.max(4, normalizeExportTime(beatToTime(projectEndBeat, project.anchors) - timeOrigin))
+  const sentinelLengthTicks = projectEndBeat * 480
 
   const headerLines = [
     '<REAPER_PROJECT 0.1 "7.72/win64" 1782641470 0',
@@ -234,6 +240,12 @@ function tempoPointAtBeat(beat: number, points: TempoPoint[]) {
     if (ordered[i].beat <= beat) return ordered[i]
   }
   return points[0]
+}
+
+function normalizeExportTime(time: number): number {
+  if (!Number.isFinite(time)) return 0
+  const normalized = Math.abs(time) < 1e-9 ? 0 : time
+  return Math.max(0, normalized)
 }
 
 function formatHex(value: number): string {
