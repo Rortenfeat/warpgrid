@@ -9,6 +9,7 @@ import type { ParsedMidi } from '../midi/parseMidi'
 import { timeToBeat } from '../core/tempoMap'
 import { sortedTimeSignatures } from '../core/timeSignature'
 import { setSegmentBpmEdits } from '../core/tempoEdit'
+import { inferTempoMapFromMidi } from '../midi/midiTempoMap'
 
 /**
  * Application store.
@@ -143,9 +144,23 @@ export const useProjectStore = create<AppState>()(
       addMidiSource: (meta, parsedMidi) =>
         set((s) => {
           const id = newId('src')
+          const inferred = inferTempoMapFromMidi(parsedMidi)
           s.project.sources.push({ id, kind: 'midi', ...meta })
           s.media[id] = { kind: 'midi', parsedMidi }
           s.project.ppq = parsedMidi.ppq
+
+          if (inferred.anchors.length >= 1) {
+            s.project.anchors = inferred.anchors.map((a, index) => ({ ...a, id: newId(`anchor-import-${index}`) }))
+            s.project.anchors = normalizeAnchors(s.project.anchors)
+          }
+
+          if (inferred.timeSignatures.length >= 1) {
+            s.project.timeSignatures = [
+              ...inferred.timeSignatures.map((ts, index) => ({ id: newId(`ts-import-${index}`), ...ts })),
+            ]
+            s.project.timeSignatures.sort((a, b) => a.bar - b.bar)
+          }
+
           s.status = `Loaded MIDI “${meta.name}” — ${meta.trackCount} tracks, ${meta.noteCount} notes`
         }),
 

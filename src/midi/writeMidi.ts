@@ -15,13 +15,14 @@ export interface TempoMapMidiOptions {
   tempoEvents: TempoEvent[]
   timeSignatures: TimeSignatureChange[]
   ppq: number
+  sentinelDurationSec?: number
 }
 
 /**
  * Create a tempo-only MIDI carrying just the tempo map and time signatures.
  * TODO(phase-4): also support re-timing an existing source Midi's note ticks.
  */
-export function buildTempoMapMidi({ tempoEvents, timeSignatures, ppq }: TempoMapMidiOptions): Midi {
+export function buildTempoMapMidi({ tempoEvents, timeSignatures, ppq, sentinelDurationSec }: TempoMapMidiOptions): Midi {
   const midi = new Midi()
   // ppq is a getter; set the whole header via fromJSON to honor the project PPQ.
   midi.header.fromJSON({
@@ -37,5 +38,17 @@ export function buildTempoMapMidi({ tempoEvents, timeSignatures, ppq }: TempoMap
     })),
   })
   midi.header.update()
+
+  if (sentinelDurationSec != null && sentinelDurationSec > 0) {
+    const track = midi.addTrack()
+    track.name = 'Warpgrid Sentinel'
+    track.addNote({
+      midi: 48,
+      time: 0,
+      duration: sentinelDurationSec,
+      velocity: 0.01,
+    })
+  }
+
   return midi
 }
