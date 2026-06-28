@@ -77,17 +77,18 @@ jobs:
         env:
           APP_PORT: ${{ vars.APP_PORT || '4173' }}
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/warpgrid' }}
-          GHCR_PULL_TOKEN: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
-          GHCR_USER: ${{ github.actor }}
           IMAGE: ${{ needs.build.outputs.image }}:${{ github.sha }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
-          envs: APP_PORT,DEPLOY_PATH,GHCR_PULL_TOKEN,GHCR_USER,IMAGE
+          envs: APP_PORT,DEPLOY_PATH,IMAGE
           script: |
             set -e
+
+            # 使用 sed 将 ghcr.io 域名动态替换为南京大学的国内加速源 ghcr.nju.edu.cn
+            MIRROR_IMAGE=$(echo "${IMAGE}" | sed 's/ghcr.io/ghcr.nju.edu.cn/g')
 
             mkdir -p "$DEPLOY_PATH"
             cd "$DEPLOY_PATH"
@@ -97,7 +98,7 @@ jobs:
 
             services:
               warpgrid:
-                image: ${IMAGE}
+                image: ${MIRROR_IMAGE}
                 restart: unless-stopped
                 ports:
                   - "${APP_PORT}:4173"
@@ -105,7 +106,7 @@ jobs:
                   NODE_ENV: production
             COMPOSE
 
-            echo "$GHCR_PULL_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            # 由于是公开仓库，通过加速通道拉取无需且不能登录该加速域名
             docker compose pull
             docker compose up -d --remove-orphans
             docker image prune -f
