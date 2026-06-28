@@ -87,6 +87,7 @@ export interface AppState {
 
   // ── time signatures ────────────────────────────────────────────
   addTimeSignature: (bar: number, numerator: number, denominator: number) => Id
+  moveTimeSignature: (id: Id, bar: number) => void
   updateTimeSignature: (id: Id, patch: Partial<Pick<TimeSignatureChange, 'numerator' | 'denominator'>>) => void
   removeTimeSignature: (id: Id) => void
 
@@ -275,6 +276,18 @@ export const useProjectStore = create<AppState>()(
           s.project.timeSignatures.sort((a, b) => a.bar - b.bar)
         })
         return id
+      },
+
+      moveTimeSignature: (id, bar) => {
+        const target = Math.max(0, Math.round(bar))
+        set((s) => {
+          const ts = s.project.timeSignatures.find((t) => t.id === id)
+          if (!ts || ts.bar === target) return
+          s.project.timeSignatures = s.project.timeSignatures
+            .filter((t) => t.id !== id && t.bar !== target)
+            .concat({ ...ts, bar: target })
+            .sort((a, b) => a.bar - b.bar)
+        })
       },
 
       updateTimeSignature: (id, patch) =>

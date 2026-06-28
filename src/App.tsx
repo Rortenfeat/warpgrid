@@ -57,12 +57,22 @@ export function App() {
       const store = useProjectStore.getState()
       const sel = store.selection
       const selIds = sel.kind === 'anchors' ? sel.anchorIds : []
+      const selTsId = sel.kind === 'timeSignature' ? sel.timeSignatureId : undefined
 
       if (mod && k === 'a') {
         e.preventDefault(); store.selectAll(); return
       }
       if (k === 'escape') { store.clearSelection(); setShowShortcuts(false); return }
       if (k === '?' || (e.shiftKey && k === '/')) { setShowShortcuts((s) => !s); return }
+      if ((k === 'delete' || k === 'backspace') && selTsId) {
+        e.preventDefault()
+        const ts = store.project.timeSignatures.find((item) => item.id === selTsId)
+        if (ts && ts.bar !== 0) {
+          store.removeTimeSignature(ts.id)
+        }
+        store.clearSelection()
+        return
+      }
       if ((k === 'delete' || k === 'backspace') && selIds.length) {
         e.preventDefault(); store.removeAnchors(selIds); store.clearSelection(); return
       }
@@ -126,11 +136,11 @@ export function App() {
                 <dt>Shift+Click</dt><dd>add / remove anchor from selection</dd>
                 <dt>Box drag</dt><dd>rubber-band select anchors</dd>
                 <dt>Right-click</dt><dd>delete an anchor</dd>
+                <dt>Delete / Backspace</dt><dd>remove selected anchor or selected time-signature marker (except bar 1)</dd>
                 <dt>Middle-drag</dt><dd>pan the timeline viewport</dd>
                 <dt>Click</dt><dd>seek when Center is off</dd>
                 <dt>Space</dt><dd>play / pause</dd>
                 <dt>← / →</dt><dd>nudge selected anchors (Shift = ×10)</dd>
-                <dt>Delete</dt><dd>remove selected anchors</dd>
                 <dt>A</dt><dd>add anchor at the playhead</dd>
                 <dt>Ctrl+A / Esc</dt><dd>select all / clear selection</dd>
                 <dt>Ctrl+Z / Ctrl+Shift+Z</dt><dd>undo / redo</dd>

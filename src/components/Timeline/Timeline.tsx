@@ -8,7 +8,7 @@ import {
 } from '../../state/useProjectStore'
 import { beatToTime, timeToBeat } from '../../core/tempoMap'
 import { snapTime } from '../../core/tempoEdit'
-import { barLengthInQuarters, sortedTimeSignatures, barStartInQuarters } from '../../core/timeSignature'
+import { barLengthInQuarters, quarterBeatToBarBeat, sortedTimeSignatures, barStartInQuarters, timeSignatureAtBar } from '../../core/timeSignature'
 import type { WaveformPeakLevel, WaveformPeaks } from '../../audio/peaks'
 import type { ParsedMidi } from '../../midi/parseMidi'
 
@@ -31,6 +31,12 @@ interface DragState {
   historyPaused: boolean
   selectionBefore: string[]
   startedWithShift: boolean
+}
+
+interface TimeSigDragState {
+  id: string
+  originBar: number
+  historyPaused: boolean
 }
 
 interface PendingEmpty {
@@ -73,6 +79,9 @@ export function Timeline() {
   const selectAnchors = useProjectStore((s) => s.selectAnchors)
   const toggleAnchor = useProjectStore((s) => s.toggleAnchor)
   const selectTimeSignature = useProjectStore((s) => s.selectTimeSignature)
+  const moveTimeSignature = useProjectStore((s) => s.moveTimeSignature)
+  const addTimeSignature = useProjectStore((s) => s.addTimeSignature)
+  const updateTimeSignature = useProjectStore((s) => s.updateTimeSignature)
   const clearSelection = useProjectStore((s) => s.clearSelection)
   const setView = useProjectStore((s) => s.setView)
 
@@ -355,6 +364,7 @@ export function Timeline() {
 
   // ── interaction ────────────────────────────────────────────────────────
   const drag = useRef<DragState | null>(null)
+  const timeSigDrag = useRef<TimeSigDragState | null>(null)
   const pending = useRef<PendingEmpty | null>(null)
   const pan = useRef<PanState | null>(null)
 
@@ -391,6 +401,70 @@ export function Timeline() {
       }
     }
     return best
+  }
+
+  const barAtX = (x: number): number => {
+    const beat = timeToBeat(xToTime(x), project.anchors)
+    return quarterBeatToBarBeat(beat, project.timeSignatures).bar
+  }
+
+  const ensureTimeSignatureAtBar = (bar: number): string => {
+    const state = useProjectStore.getState()
+    const existing = state.project.timeSignatures.find((ts) => ts.bar === bar)
+    if (existing) return existing.id
+    const base = timeSignatureAtBar(bar, state.project.timeSignatures)
+    return addTimeSignature(bar, base.numerator, base.denominator)
+  }
+
+  const beginTimeSigDrag = (id: string) => {
+    const ts = project.timeSignatures.find((item) => item.id === id)
+    if (!ts) return
+    timeSigDrag.current = { id, originBar: ts.bar, historyPaused: false }
+    pauseHistory()
+    timeSigDrag.current.historyPaused = true
+    selectTimeSignature(id)
+  }
+
+  const stepTimeSignatureNumerator = (tsId: string, step: number) => {
+    const ts = useProjectStore.getState().project.timeSignatures.find((item) => item.id === tsId)
+    if (!ts) return false
+    const next = Math.max(1, ts.numerator + step)
+    if (next === ts.numerator) return false
+    updateTimeSignature(tsId, { numerator: next })
+    return true
+  }
+
+  const stepSelectedByAnchors = (step: number): boolean => {
+    const sel = useProjectStore.getState().selection
+    if (sel.kind !== 'anchors' || sel.anchorIds.length === 0) return false
+    const state = useProjectStore.getState()
+    const anchors = state.project.anchors
+    const tsList = state.project.timeSignatures
+    const selectedAnchors = anchors.filter((a) => sel.anchorIds.includes(a.id))
+    if (selectedAnchors.length === 0) return false
+    const bar = quarterBeatToBarBeat(selectedAnchors[0].beat, tsList).bar
+    if (selectedAnchors.some((a) => quarterBeatToBarBeat(a.beat, tsList).bar !== bar)) return false
+
+    const alreadyHasTs = state.project.timeSignatures.some((item) => item.bar === bar)
+    pauseHistory()
+    let changed = false
+    try {
+      const id = ensureTimeSignatureAtBar(bar)
+      changed = stepTimeSignatureNumerator(id, step)
+      if (!changed && !alreadyHasTs) changed = true
+      if (changed) selectTimeSignature(id)
+    } finally {
+      resumeHistory()
+    }
+    return changed
+  }
+
+  const onShiftWheel = (step: number): boolean => {
+    const sel = useProjectStore.getState().selection
+    if (sel.kind === 'timeSignature' && sel.timeSignatureId) {
+      return stepTimeSignatureNumerator(sel.timeSignatureId, step)
+    }
+    return stepSelectedByAnchors(step)
   }
 
   // Snap candidates: every non-dragged anchor, the playhead, and t=0.
@@ -447,6 +521,7 @@ export function Timeline() {
 
   const hoverCursor = (x: number, y: number): string => {
     if (y >= minimapTopFor()) return 'grab'
+    if (tsMarkerAt(x)) return 'grab'
     if (anchorAt(x)) return 'ew-resize'
     if (y >= RULER_H && barLineAt(x)) return 'col-resize'
     return 'crosshair'
@@ -537,7 +612,12 @@ export function Timeline() {
     // Ruler: select a time-signature marker.
     if (y < RULER_H) {
       const tsId = tsMarkerAt(x)
-      if (tsId) { selectTimeSignature(tsId); return }
+      if (tsId) {
+        beginTimeSigDrag(tsId)
+        setCursor('grabbing')
+        canvasRef.current!.setPointerCapture(e.pointerId)
+        return
+      }
     }
 
     const hit = anchorAt(x)
@@ -576,6 +656,12 @@ export function Timeline() {
 
     if (drag.current) {
       applyDragMove(x, e)
+      return
+    }
+
+    if (timeSigDrag.current) {
+      const state = timeSigDrag.current
+      moveTimeSignature(state.id, barAtX(x))
       return
     }
 
@@ -627,6 +713,17 @@ export function Timeline() {
       return
     }
 
+    if (timeSigDrag.current) {
+      const d = timeSigDrag.current
+      if (d.historyPaused) resumeHistory()
+      const ts = project.timeSignatures.find((item) => item.id === d.id)
+      if (ts && ts.bar !== d.originBar) selectTimeSignature(ts.id)
+      else if (ts) selectTimeSignature(ts.id)
+      timeSigDrag.current = null
+      setCursor('crosshair')
+      return
+    }
+
     if (pending.current) {
       const p = pending.current
       if (p.moved && rubber) {
@@ -647,6 +744,10 @@ export function Timeline() {
 
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault()
+    if (e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      const step = e.deltaY < 0 ? 1 : -1
+      if (onShiftWheel(step)) return
+    }
     if (e.ctrlKey || e.metaKey) {
       const rect = canvasRef.current!.getBoundingClientRect()
       const x = e.clientX - rect.left
@@ -702,7 +803,7 @@ export function Timeline() {
         onContextMenu={onContextMenu}
       />
       <div className={styles.legend}>
-        <span>Click: seek when not centered · Drag bar line: anchor · Drag anchor: ripple warp · Shift+drag: isolated · Middle-drag: pan · Right-click: delete</span>
+        <span>Hover on time signature to grab · Drag marker to move bar · Shift+Wheel: adjust numerator · Drag bar line: anchor · Drag anchor: ripple warp · Shift+drag: isolated · Middle-drag: pan · Right-click: delete</span>
         <span className="mono">{Math.round(view.pxPerSecond)} px/s · {contentDuration.toFixed(1)}s</span>
       </div>
     </div>
@@ -816,3 +917,4 @@ function drawWaveformChannels(
     }
   }
 }
+
