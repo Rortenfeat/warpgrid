@@ -86,12 +86,14 @@ Warp anchors  ◄── drag bar lines / anchors (Timeline canvas)
 | Select | Click an anchor · **Shift+Click** to multi-select · drag a box to rubber-band |
 | Nudge selection | **← / →** (hold **Shift** for ×10) |
 | Delete anchor | Right-click an anchor, or select + **Delete** |
+| Seek | When **Center** is off, click the timeline to move the playhead |
+| Pan viewport | Hold the middle mouse button and drag |
 | Edit segment tempo | Double-click the tempo lane, or use the Inspector |
 | Smooth tempo | Planned: enable on an anchor to smooth the segment from the previous anchor to it |
 | Time signatures | **+ Time Sig** (at playhead bar); click a ruler marker to edit/delete |
 | Select all / clear | **Ctrl+A** / **Esc** |
-| Zoom / scroll | **Ctrl+Wheel** / wheel |
-| Play / Stop / Seek | Transport bar (audio); **Center** keeps the playhead fixed in the viewport |
+| Zoom / scroll | **Ctrl+Wheel** / wheel; Ctrl+Wheel is captured so the browser page does not zoom |
+| Play / Stop / Seek | Transport bar (audio), or **Space** to toggle play/pause; **Center** keeps the playhead fixed in the viewport |
 | Undo / Redo | **Ctrl+Z** / **Ctrl+Shift+Z** |
 | Shortcuts help | **?** |
 

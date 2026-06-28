@@ -35,7 +35,16 @@ interface DragState {
 interface PendingEmpty {
   startX: number
   startY: number
+  kind: 'empty' | 'bar'
+  barLine?: { beat: number; time: number }
+  selectionBefore: string[]
+  startedWithShift: boolean
   moved: boolean
+}
+
+interface PanState {
+  startX: number
+  startScrollSec: number
 }
 
 /**
@@ -50,6 +59,7 @@ export function Timeline() {
   const [size, setSize] = useState({ w: 0, h: 0 })
   const [rubber, setRubber] = useState<{ x0: number; x1: number } | null>(null)
   const [snapX, setSnapX] = useState<number | null>(null)
+  const [cursor, setCursor] = useState('crosshair')
 
   const project = useProjectStore((s) => s.project)
   const media = useProjectStore((s) => s.media)
@@ -261,6 +271,7 @@ export function Timeline() {
   // ── interaction ────────────────────────────────────────────────────────
   const drag = useRef<DragState | null>(null)
   const pending = useRef<PendingEmpty | null>(null)
+  const pan = useRef<PanState | null>(null)
 
   const anchorAt = (x: number): string | null => {
     let best: string | null = null
@@ -317,6 +328,65 @@ export function Timeline() {
     return anchors.filter((a) => a.beat >= minBeat - 1e-6).map((a) => a.id)
   }
 
+  const centeredView = (scrollSec: number, pxPerSecond = view.pxPerSecond) => {
+    const playheadSec = Math.max(0, scrollSec + size.w / (2 * pxPerSecond))
+    return {
+      playheadSec,
+      scrollSec: playheadSec - size.w / (2 * pxPerSecond),
+    }
+  }
+
+  const setTimelineScroll = (scrollSec: number) => {
+    if (view.followPlayhead && size.w > 0) {
+      const next = centeredView(scrollSec)
+      setView(next)
+      window.dispatchEvent(new CustomEvent('warpgrid:seek', { detail: { time: next.playheadSec } }))
+    } else {
+      setView({ scrollSec, followPlayhead: false })
+    }
+  }
+
+  const seekTo = (time: number) => {
+    const playheadSec = Math.max(0, time)
+    setView({ playheadSec })
+    window.dispatchEvent(new CustomEvent('warpgrid:seek', { detail: { time: playheadSec } }))
+  }
+
+  const hoverCursor = (x: number, y: number): string => {
+    if (anchorAt(x)) return 'ew-resize'
+    if (y >= RULER_H && barLineAt(x)) return 'col-resize'
+    return 'crosshair'
+  }
+
+  const applyDragMove = (x: number, e: React.PointerEvent) => {
+    const d = drag.current
+    if (!d) return
+    const rawDelta = xToTime(x) - d.startTime
+    let target = d.origin[d.primaryId] + rawDelta
+    let snapped = false
+    if (!e.ctrlKey && !e.metaKey) {
+      const tol = SNAP_PX / view.pxPerSecond
+      const s = snapTime(target, snapCandidates(new Set(d.moveIds)), tol)
+      if (s !== target) { target = s; snapped = true }
+    }
+    const totalDelta = target - d.origin[d.primaryId]
+    if (!d.moved) {
+      // First move records the pre-drag state, then we pause so the whole
+      // gesture collapses into a single undo step.
+      if (!d.selectionBefore.includes(d.primaryId)) selectAnchors(d.ids)
+      moveAnchorsBy(d.moveIds, totalDelta - d.appliedDelta)
+      if (!d.historyPaused) {
+        pauseHistory()
+        d.historyPaused = true
+      }
+      d.moved = true
+    } else {
+      moveAnchorsBy(d.moveIds, totalDelta - d.appliedDelta)
+    }
+    d.appliedDelta = totalDelta
+    setSnapX(snapped ? timeToX(target) : null)
+  }
+
   const beginDrag = (
     hit: string,
     x: number,
@@ -348,10 +418,18 @@ export function Timeline() {
   }
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0) return
     const rect = canvasRef.current!.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
+
+    if (e.button === 1) {
+      e.preventDefault()
+      pan.current = { startX: x, startScrollSec: view.scrollSec }
+      setCursor('grabbing')
+      canvasRef.current!.setPointerCapture(e.pointerId)
+      return
+    }
+    if (e.button !== 0) return
     const current = selection.kind === 'anchors' ? selection.anchorIds : []
 
     // Ruler: select a time-signature marker.
@@ -364,23 +442,18 @@ export function Timeline() {
     if (hit) {
       if (!e.shiftKey && !current.includes(hit)) selectAnchors([hit])
       beginDrag(hit, x, false, e.shiftKey, current)
+      setCursor('ew-resize')
       canvasRef.current!.setPointerCapture(e.pointerId)
       return
     }
 
     const barLine = barLineAt(x)
     if (barLine && y >= RULER_H) {
-      let id = anchorForBeat(barLine.beat)
-      let created = false
-      if (!id) {
-        id = addAnchor(barLine.beat, barLine.time)
-        created = true
-      }
-      selectAnchors([id])
-      beginDrag(id, x, created, e.shiftKey, current)
+      pending.current = { startX: x, startY: y, kind: 'bar', barLine, selectionBefore: current, startedWithShift: e.shiftKey, moved: false }
+      setCursor('col-resize')
       canvasRef.current!.setPointerCapture(e.pointerId)
     } else {
-      pending.current = { startX: x, startY: y, moved: false }
+      pending.current = { startX: x, startY: y, kind: 'empty', selectionBefore: current, startedWithShift: e.shiftKey, moved: false }
       canvasRef.current!.setPointerCapture(e.pointerId)
     }
   }
@@ -388,45 +461,52 @@ export function Timeline() {
   const onPointerMove = (e: React.PointerEvent) => {
     const rect = canvasRef.current!.getBoundingClientRect()
     const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+
+    if (pan.current) {
+      const nextScroll = pan.current.startScrollSec - (x - pan.current.startX) / view.pxPerSecond
+      setTimelineScroll(nextScroll)
+      return
+    }
 
     if (drag.current) {
-      const d = drag.current
-      const rawDelta = xToTime(x) - d.startTime
-      let target = d.origin[d.primaryId] + rawDelta
-      let snapped = false
-      if (!e.ctrlKey && !e.metaKey) {
-        const tol = SNAP_PX / view.pxPerSecond
-        const s = snapTime(target, snapCandidates(new Set(d.moveIds)), tol)
-        if (s !== target) { target = s; snapped = true }
-      }
-      const totalDelta = target - d.origin[d.primaryId]
-      if (!d.moved) {
-        // First move records the pre-drag state, then we pause so the whole
-        // gesture collapses into a single undo step.
-        if (!d.selectionBefore.includes(d.primaryId)) selectAnchors(d.ids)
-        moveAnchorsBy(d.moveIds, totalDelta - d.appliedDelta)
-        if (!d.historyPaused) {
-          pauseHistory()
-          d.historyPaused = true
-        }
-        d.moved = true
-      } else {
-        moveAnchorsBy(d.moveIds, totalDelta - d.appliedDelta)
-      }
-      d.appliedDelta = totalDelta
-      setSnapX(snapped ? timeToX(target) : null)
+      applyDragMove(x, e)
       return
     }
 
     if (pending.current) {
       const p = pending.current
       if (!p.moved && Math.abs(x - p.startX) > DRAG_THRESHOLD_PX) p.moved = true
+      if (p.moved && p.kind === 'bar' && p.barLine) {
+        let id = anchorForBeat(p.barLine.beat)
+        let created = false
+        if (!id) {
+          id = addAnchor(p.barLine.beat, p.barLine.time)
+          created = true
+        }
+        selectAnchors([id])
+        beginDrag(id, p.startX, created, p.startedWithShift, p.selectionBefore)
+        applyDragMove(x, e)
+        pending.current = null
+        setCursor('ew-resize')
+        return
+      }
       if (p.moved) setRubber({ x0: p.startX, x1: x })
+      else setCursor(hoverCursor(x, y))
+      return
     }
+
+    setCursor(hoverCursor(x, y))
   }
 
   const onPointerUp = (e: React.PointerEvent) => {
     try { canvasRef.current!.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
+
+    if (pan.current) {
+      pan.current = null
+      setCursor('crosshair')
+      return
+    }
 
     if (drag.current) {
       const d = drag.current
@@ -434,9 +514,11 @@ export function Timeline() {
       if (!d.moved) {
         if (d.startedWithShift && !d.created) toggleAnchor(d.primaryId)
         else selectAnchors(d.ids)
+        if (!view.followPlayhead) seekTo(d.origin[d.primaryId])
       }
       drag.current = null
       setSnapX(null)
+      setCursor('crosshair')
       return
     }
 
@@ -450,26 +532,46 @@ export function Timeline() {
         selectAnchors(ids)
       } else {
         clearSelection()
+        if (!view.followPlayhead) seekTo(xToTime(p.startX))
       }
       pending.current = null
       setRubber(null)
+      setCursor('crosshair')
     }
   }
 
   const onWheel = (e: React.WheelEvent) => {
+    e.preventDefault()
     if (e.ctrlKey || e.metaKey) {
       const rect = canvasRef.current!.getBoundingClientRect()
       const x = e.clientX - rect.left
       const tAtCursor = xToTime(x)
       const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15
       const pxPerSecond = Math.min(4000, Math.max(8, view.pxPerSecond * factor))
-      const scrollSec = tAtCursor - x / pxPerSecond
-      setView({ pxPerSecond, scrollSec, followPlayhead: false })
+      if (view.followPlayhead && size.w > 0) {
+        setView({
+          pxPerSecond,
+          scrollSec: view.playheadSec - size.w / (2 * pxPerSecond),
+        })
+      } else {
+        const scrollSec = tAtCursor - x / pxPerSecond
+        setView({ pxPerSecond, scrollSec, followPlayhead: false })
+      }
     } else {
       const scrollSec = view.scrollSec + (e.deltaX || e.deltaY) / view.pxPerSecond
-      setView({ scrollSec, followPlayhead: false })
+      setTimelineScroll(scrollSec)
     }
   }
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const blockBrowserZoom = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey) event.preventDefault()
+    }
+    canvas.addEventListener('wheel', blockBrowserZoom, { passive: false })
+    return () => canvas.removeEventListener('wheel', blockBrowserZoom)
+  }, [])
 
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -486,7 +588,8 @@ export function Timeline() {
       <canvas
         ref={canvasRef}
         className={styles.canvas}
-        style={{ width: size.w, height: size.h }}
+        style={{ width: size.w, height: size.h, cursor }}
+        onAuxClick={(e) => e.preventDefault()}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -494,7 +597,7 @@ export function Timeline() {
         onContextMenu={onContextMenu}
       />
       <div className={styles.legend}>
-        <span>Drag bar line: anchor · Drag anchor: ripple warp · Shift+drag: isolated · Shift+click: multi-select · Right-click: delete · Ctrl: no-snap</span>
+        <span>Click: seek when not centered · Drag bar line: anchor · Drag anchor: ripple warp · Shift+drag: isolated · Middle-drag: pan · Right-click: delete</span>
         <span className="mono">{Math.round(view.pxPerSecond)} px/s · {contentDuration.toFixed(1)}s</span>
       </div>
     </div>

@@ -10,12 +10,20 @@ import { ImportDropzone } from './components/ImportDropzone/ImportDropzone'
 import { useProjectStore, useHistory } from './state/useProjectStore'
 import { timeToBeat } from './core/tempoMap'
 
-/** True when the keyboard focus is in a text field, so we don't hijack typing. */
-function inEditableField(): boolean {
+/** True when the keyboard focus is in text entry, so Space remains typeable. */
+function inTextEntryField(): boolean {
   const el = document.activeElement
   if (!el) return false
   const tag = el.tagName.toLowerCase()
-  return tag === 'input' || tag === 'textarea' || tag === 'select' || (el as HTMLElement).isContentEditable
+  if ((el as HTMLElement).isContentEditable) return true
+  if (tag === 'textarea') return true
+  if (tag !== 'input') return false
+  const type = ((el as HTMLInputElement).type || 'text').toLowerCase()
+  return ['email', 'number', 'password', 'search', 'tel', 'text', 'url'].includes(type)
+}
+
+function shouldHandleTransportSpace(e: KeyboardEvent): boolean {
+  return e.code === 'Space' && !inTextEntryField()
 }
 
 /**
@@ -32,12 +40,19 @@ export function App() {
       const mod = e.ctrlKey || e.metaKey
       const k = e.key.toLowerCase()
 
+      if (shouldHandleTransportSpace(e)) {
+        e.preventDefault()
+        e.stopPropagation()
+        if (!e.repeat) window.dispatchEvent(new Event('warpgrid:togglePlayback'))
+        return
+      }
+
       // Undo / redo work everywhere.
       if (mod && k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return }
       if (mod && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); redo(); return }
 
       // The rest must not fire while typing in the inspector / BPM field.
-      if (inEditableField()) return
+      if (inTextEntryField()) return
 
       const store = useProjectStore.getState()
       const sel = store.selection
@@ -66,8 +81,17 @@ export function App() {
         return
       }
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (!shouldHandleTransportSpace(e)) return
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    window.addEventListener('keydown', onKey, { capture: true })
+    window.addEventListener('keyup', onKeyUp, { capture: true })
+    return () => {
+      window.removeEventListener('keydown', onKey, { capture: true })
+      window.removeEventListener('keyup', onKeyUp, { capture: true })
+    }
   }, [undo, redo])
 
   return (
@@ -102,6 +126,9 @@ export function App() {
                 <dt>Shift+Click</dt><dd>add / remove anchor from selection</dd>
                 <dt>Box drag</dt><dd>rubber-band select anchors</dd>
                 <dt>Right-click</dt><dd>delete an anchor</dd>
+                <dt>Middle-drag</dt><dd>pan the timeline viewport</dd>
+                <dt>Click</dt><dd>seek when Center is off</dd>
+                <dt>Space</dt><dd>play / pause</dd>
                 <dt>← / →</dt><dd>nudge selected anchors (Shift = ×10)</dd>
                 <dt>Delete</dt><dd>remove selected anchors</dd>
                 <dt>A</dt><dd>add anchor at the playhead</dd>

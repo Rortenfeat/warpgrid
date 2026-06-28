@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import styles from './TransportBar.module.css'
 import { useProjectStore } from '../../state/useProjectStore'
 
@@ -38,8 +38,11 @@ export function TransportBar() {
   const rafRef = useRef<number | null>(null)
   const startedAtRef = useRef(0)
   const offsetRef = useRef(0)
+  const playingRef = useRef(false)
 
-  const stop = () => {
+  useEffect(() => { playingRef.current = playing }, [playing])
+
+  const stop = useCallback(() => {
     if (nodeRef.current) {
       try { nodeRef.current.stop() } catch { /* already stopped */ }
       nodeRef.current.disconnect()
@@ -48,18 +51,19 @@ export function TransportBar() {
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
     rafRef.current = null
     setPlaying(false)
-  }
+  }, [])
 
-  const play = () => {
+  const playFrom = useCallback((startAt: number) => {
     if (!audioBuffer) return
     const ctx = getCtx()
     void ctx.resume()
     const node = ctx.createBufferSource()
     node.buffer = audioBuffer
     node.connect(ctx.destination)
-    const offset = Math.min(Math.max(0, view.playheadSec), audioBuffer.duration - 0.01)
+    const offset = Math.min(Math.max(0, startAt), audioBuffer.duration - 0.01)
     offsetRef.current = Math.max(0, offset)
     startedAtRef.current = ctx.currentTime
+    setView({ playheadSec: offsetRef.current })
     node.start(0, offsetRef.current)
     node.onended = () => { if (nodeRef.current === node) stop() }
     nodeRef.current = node
@@ -72,7 +76,21 @@ export function TransportBar() {
       rafRef.current = requestAnimationFrame(tick)
     }
     rafRef.current = requestAnimationFrame(tick)
-  }
+  }, [audioBuffer, setView, stop])
+
+  const play = useCallback(() => playFrom(view.playheadSec), [playFrom, view.playheadSec])
+
+  const seek = useCallback((time: number, resume = playingRef.current) => {
+    const clamped = Math.min(Math.max(0, time), Math.max(0, duration))
+    stop()
+    setView({ playheadSec: clamped })
+    if (resume) playFrom(clamped)
+  }, [duration, playFrom, setView, stop])
+
+  const togglePlayback = useCallback(() => {
+    if (playingRef.current) stop()
+    else playFrom(view.playheadSec)
+  }, [playFrom, stop, view.playheadSec])
 
   // Clean up on unmount.
   useEffect(() => stop, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -80,12 +98,21 @@ export function TransportBar() {
   const zoom = (factor: number) =>
     setView({ pxPerSecond: Math.min(4000, Math.max(8, view.pxPerSecond * factor)) })
 
-  const seek = (time: number) => {
-    stop()
-    setView({ playheadSec: Math.min(Math.max(0, time), Math.max(0, duration)) })
-  }
-
   const skip = (delta: number) => seek(view.playheadSec + delta)
+
+  useEffect(() => {
+    const onToggle = () => togglePlayback()
+    const onSeek = (event: Event) => {
+      const detail = (event as CustomEvent<{ time: number }>).detail
+      if (detail && Number.isFinite(detail.time)) seek(detail.time)
+    }
+    window.addEventListener('warpgrid:togglePlayback', onToggle)
+    window.addEventListener('warpgrid:seek', onSeek)
+    return () => {
+      window.removeEventListener('warpgrid:togglePlayback', onToggle)
+      window.removeEventListener('warpgrid:seek', onSeek)
+    }
+  }, [seek, togglePlayback])
 
   const fmt = (s: number) => {
     const m = Math.floor(s / 60)
