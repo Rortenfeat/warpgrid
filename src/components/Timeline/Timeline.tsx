@@ -9,6 +9,7 @@ import {
 import { beatToTime, timeToBeat } from '../../core/tempoMap'
 import { snapTime } from '../../core/tempoEdit'
 import { barLengthInQuarters, quarterBeatToBarBeat, sortedTimeSignatures, barStartInQuarters, timeSignatureAtBar } from '../../core/timeSignature'
+import type { TimeSignatureChange } from '../../core/types'
 import type { WaveformPeakLevel, WaveformPeaks } from '../../audio/peaks'
 import type { ParsedMidi } from '../../midi/parseMidi'
 
@@ -37,6 +38,7 @@ interface TimeSigDragState {
   id: string
   originBar: number
   historyPaused: boolean
+  guideSignatures: TimeSignatureChange[]
 }
 
 interface PendingEmpty {
@@ -403,9 +405,9 @@ export function Timeline() {
     return best
   }
 
-  const barAtX = (x: number): number => {
+  const barAtX = (x: number, signatures = project.timeSignatures): number => {
     const beat = timeToBeat(xToTime(x), project.anchors)
-    return quarterBeatToBarBeat(beat, project.timeSignatures).bar
+    return quarterBeatToBarBeat(beat, signatures).bar
   }
 
   const ensureTimeSignatureAtBar = (bar: number): string => {
@@ -419,7 +421,13 @@ export function Timeline() {
   const beginTimeSigDrag = (id: string) => {
     const ts = project.timeSignatures.find((item) => item.id === id)
     if (!ts) return
-    timeSigDrag.current = { id, originBar: ts.bar, historyPaused: false }
+    const signatures = project.timeSignatures.filter((item) => item.id !== id)
+    timeSigDrag.current = {
+      id,
+      originBar: ts.bar,
+      historyPaused: false,
+      guideSignatures: signatures,
+    }
     pauseHistory()
     timeSigDrag.current.historyPaused = true
     selectTimeSignature(id)
@@ -661,7 +669,7 @@ export function Timeline() {
 
     if (timeSigDrag.current) {
       const state = timeSigDrag.current
-      moveTimeSignature(state.id, barAtX(x))
+      moveTimeSignature(state.id, barAtX(x, state.guideSignatures))
       return
     }
 
