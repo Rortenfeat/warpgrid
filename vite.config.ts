@@ -9,6 +9,9 @@ export default defineConfig({
     port: 5173,
     open: true,
   },
+  preview: {
+    allowedHosts: ['warpgrid.evor.top'],
+  },
   test: {
     environment: 'node',
     include: ['src/**/*.{test,spec}.ts'],
