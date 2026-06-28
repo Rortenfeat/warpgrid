@@ -21,7 +21,7 @@ export function InspectorBar() {
     return (
       <Bar>
         <span className={styles.field}>{selection.anchorIds.length} anchors selected</span>
-        <span className={styles.hint}>drag to warp · ←/→ nudge · Del to delete</span>
+        <span className={styles.hint}>drag ripples downstream · Shift+drag isolates · ←/→ nudge · Del to delete</span>
       </Bar>
     )
   }

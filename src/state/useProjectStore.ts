@@ -33,6 +33,8 @@ export interface ViewState {
   scrollSec: number
   /** Playhead position, in seconds. */
   playheadSec: number
+  /** Keep the playhead fixed in the viewport center while the grid scrolls. */
+  followPlayhead: boolean
 }
 
 /** What the Inspector is currently editing. */
@@ -117,7 +119,7 @@ export const useProjectStore = create<AppState>()(
     immer((set, get) => ({
       project: initialProject,
       media: {},
-      view: { pxPerSecond: 120, scrollSec: 0, playheadSec: 0 },
+      view: { pxPerSecond: 120, scrollSec: 0, playheadSec: 0, followPlayhead: true },
       selection: emptySelection,
       status: 'Ready — drop an audio or MIDI file to begin.',
 
@@ -159,7 +161,7 @@ export const useProjectStore = create<AppState>()(
         set((s) => {
           const idset = new Set(ids)
           for (const a of s.project.anchors) {
-            if (idset.has(a.id)) a.time = Math.max(0, a.time + deltaTime)
+            if (idset.has(a.id)) a.time += deltaTime
           }
           s.project.anchors = normalizeAnchors(s.project.anchors)
         }),
@@ -168,7 +170,7 @@ export const useProjectStore = create<AppState>()(
         set((s) => {
           const anchor = s.project.anchors.find((a) => a.id === id)
           if (!anchor) return
-          anchor.time = Math.max(0, time)
+          anchor.time = time
           s.project.anchors = normalizeAnchors(s.project.anchors)
         }),
 
@@ -250,7 +252,7 @@ export const useProjectStore = create<AppState>()(
       reset: () => set((s) => {
         s.project = createEmptyProject()
         s.media = {}
-        s.view = { pxPerSecond: 120, scrollSec: 0, playheadSec: 0 }
+        s.view = { pxPerSecond: 120, scrollSec: 0, playheadSec: 0, followPlayhead: true }
         s.selection = emptySelection
         s.status = 'Ready — drop an audio or MIDI file to begin.'
       }),

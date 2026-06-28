@@ -5,6 +5,7 @@
   padding: 0 12px;
   background: var(--bg-1);
   height: var(--h-toolbar);
+  border-bottom: 1px solid var(--line);
 }
 
 .brand {
@@ -22,7 +23,7 @@
 .name {
   font-weight: 600;
   font-size: 14px;
-  letter-spacing: 0.2px;
+  letter-spacing: 0;
 }
 
 .group {

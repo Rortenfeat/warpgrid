@@ -13,24 +13,28 @@ import type { WaveformPeaks } from '../../audio/peaks'
 import type { ParsedMidi } from '../../midi/parseMidi'
 
 const ANCHOR_HIT_PX = 7
+const BAR_HIT_PX = 6
 const RULER_H = 22
 const DRAG_THRESHOLD_PX = 4
 const SNAP_PX = 7
 
 interface DragState {
   ids: string[]
+  moveIds: string[]
   origin: Record<string, number>
   primaryId: string
   startTime: number
   appliedDelta: number
   moved: boolean
+  created: boolean
+  historyPaused: boolean
+  selectionBefore: string[]
+  startedWithShift: boolean
 }
 
 interface PendingEmpty {
   startX: number
   startY: number
-  time: number
-  beat: number
   moved: boolean
 }
 
@@ -90,6 +94,12 @@ export function Timeline() {
 
   const timeToX = useCallbackRef((t: number) => (t - view.scrollSec) * view.pxPerSecond)
   const xToTime = useCallbackRef((x: number) => view.scrollSec + x / view.pxPerSecond)
+
+  useEffect(() => {
+    if (!view.followPlayhead || size.w === 0) return
+    const scrollSec = view.playheadSec - size.w / (2 * view.pxPerSecond)
+    if (Math.abs(scrollSec - view.scrollSec) > 0.001) setView({ scrollSec })
+  }, [size.w, view.followPlayhead, view.playheadSec, view.pxPerSecond, view.scrollSec, setView])
 
   // Real-time x positions of the time-signature markers (ruler), for hit-testing.
   const tsMarkers = useMemo(() => {
@@ -169,6 +179,10 @@ export function Timeline() {
       if (isBar) {
         ctx.fillStyle = c('--text-2')
         ctx.fillText(String(barNumber(beat, tsList) + 1), x + 3, 14)
+        ctx.fillStyle = c('--grid-bar')
+        ctx.beginPath()
+        ctx.arc(x, RULER_H - 4, 2, 0, Math.PI * 2)
+        ctx.fill()
       }
     }
 
@@ -265,6 +279,24 @@ export function Timeline() {
     return null
   }
 
+  const barLineAt = (x: number): { beat: number; time: number } | null => {
+    const tsList = sortedTimeSignatures(project.timeSignatures)
+    const startBeat = Math.floor(timeToBeat(view.scrollSec, project.anchors))
+    const endBeat = Math.ceil(timeToBeat(view.scrollSec + size.w / view.pxPerSecond, project.anchors))
+    let best: { beat: number; time: number } | null = null
+    let bestDist = BAR_HIT_PX
+    for (let beat = Math.max(0, startBeat - 1); beat <= endBeat + 1; beat++) {
+      if (!isDownbeat(beat, tsList)) continue
+      const time = beatToTime(beat, project.anchors)
+      const d = Math.abs(timeToX(time) - x)
+      if (d < bestDist) {
+        bestDist = d
+        best = { beat, time }
+      }
+    }
+    return best
+  }
+
   // Snap candidates: every non-dragged anchor, the playhead, and t=0.
   const snapCandidates = (excluded: Set<string>): number[] => {
     const cands = [0, view.playheadSec]
@@ -272,10 +304,55 @@ export function Timeline() {
     return cands
   }
 
+  const anchorForBeat = (beat: number): string | null => {
+    const found = project.anchors.find((a) => Math.abs(a.beat - beat) < 1e-6)
+    return found?.id ?? null
+  }
+
+  const downstreamIds = (baseIds: string[]): string[] => {
+    const anchors = useProjectStore.getState().project.anchors
+    const base = anchors.filter((a) => baseIds.includes(a.id))
+    if (base.length === 0) return baseIds
+    const minBeat = Math.min(...base.map((a) => a.beat))
+    return anchors.filter((a) => a.beat >= minBeat - 1e-6).map((a) => a.id)
+  }
+
+  const beginDrag = (
+    hit: string,
+    x: number,
+    created: boolean,
+    startedWithShift: boolean,
+    selectionBefore: string[],
+  ) => {
+    const current = selectionBefore
+    const ids = current.includes(hit) ? current : [hit]
+    const moveIds = startedWithShift ? ids : downstreamIds(ids)
+    const origin: Record<string, number> = {}
+    for (const a of useProjectStore.getState().project.anchors) {
+      if (moveIds.includes(a.id)) origin[a.id] = a.time
+    }
+    drag.current = {
+      ids,
+      moveIds,
+      origin,
+      primaryId: hit,
+      startTime: xToTime(x),
+      appliedDelta: 0,
+      moved: false,
+      created,
+      historyPaused: created,
+      selectionBefore,
+      startedWithShift,
+    }
+    if (created) pauseHistory()
+  }
+
   const onPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return
     const rect = canvasRef.current!.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
+    const current = selection.kind === 'anchors' ? selection.anchorIds : []
 
     // Ruler: select a time-signature marker.
     if (y < RULER_H) {
@@ -284,24 +361,26 @@ export function Timeline() {
     }
 
     const hit = anchorAt(x)
-    if (e.altKey && hit) {
-      removeAnchor(hit)
-      clearSelection()
+    if (hit) {
+      if (!e.shiftKey && !current.includes(hit)) selectAnchors([hit])
+      beginDrag(hit, x, false, e.shiftKey, current)
+      canvasRef.current!.setPointerCapture(e.pointerId)
       return
     }
 
-    if (hit) {
-      if (e.shiftKey) { toggleAnchor(hit); return }
-      // If the hit anchor isn't part of the current selection, select just it.
-      const current = selection.kind === 'anchors' ? selection.anchorIds : []
-      const ids = current.includes(hit) ? current : [hit]
-      if (!current.includes(hit)) selectAnchors([hit])
-      const origin: Record<string, number> = {}
-      for (const a of project.anchors) if (ids.includes(a.id)) origin[a.id] = a.time
-      drag.current = { ids, origin, primaryId: hit, startTime: xToTime(x), appliedDelta: 0, moved: false }
+    const barLine = barLineAt(x)
+    if (barLine && y >= RULER_H) {
+      let id = anchorForBeat(barLine.beat)
+      let created = false
+      if (!id) {
+        id = addAnchor(barLine.beat, barLine.time)
+        created = true
+      }
+      selectAnchors([id])
+      beginDrag(id, x, created, e.shiftKey, current)
       canvasRef.current!.setPointerCapture(e.pointerId)
     } else {
-      pending.current = { startX: x, startY: y, time: Math.max(0, xToTime(x)), beat: 0, moved: false }
+      pending.current = { startX: x, startY: y, moved: false }
       canvasRef.current!.setPointerCapture(e.pointerId)
     }
   }
@@ -317,18 +396,22 @@ export function Timeline() {
       let snapped = false
       if (!e.ctrlKey && !e.metaKey) {
         const tol = SNAP_PX / view.pxPerSecond
-        const s = snapTime(target, snapCandidates(new Set(d.ids)), tol)
+        const s = snapTime(target, snapCandidates(new Set(d.moveIds)), tol)
         if (s !== target) { target = s; snapped = true }
       }
       const totalDelta = target - d.origin[d.primaryId]
       if (!d.moved) {
         // First move records the pre-drag state, then we pause so the whole
         // gesture collapses into a single undo step.
-        moveAnchorsBy(d.ids, totalDelta - d.appliedDelta)
-        pauseHistory()
+        if (!d.selectionBefore.includes(d.primaryId)) selectAnchors(d.ids)
+        moveAnchorsBy(d.moveIds, totalDelta - d.appliedDelta)
+        if (!d.historyPaused) {
+          pauseHistory()
+          d.historyPaused = true
+        }
         d.moved = true
       } else {
-        moveAnchorsBy(d.ids, totalDelta - d.appliedDelta)
+        moveAnchorsBy(d.moveIds, totalDelta - d.appliedDelta)
       }
       d.appliedDelta = totalDelta
       setSnapX(snapped ? timeToX(target) : null)
@@ -346,7 +429,12 @@ export function Timeline() {
     try { canvasRef.current!.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
 
     if (drag.current) {
-      if (drag.current.moved) resumeHistory()
+      const d = drag.current
+      if (d.historyPaused) resumeHistory()
+      if (!d.moved) {
+        if (d.startedWithShift && !d.created) toggleAnchor(d.primaryId)
+        else selectAnchors(d.ids)
+      }
       drag.current = null
       setSnapX(null)
       return
@@ -361,12 +449,7 @@ export function Timeline() {
         const ids = project.anchors.filter((a) => a.time >= t0 && a.time <= t1).map((a) => a.id)
         selectAnchors(ids)
       } else {
-        // Plain click on empty space: drop a new anchor at the nearest beat.
         clearSelection()
-        const t = p.time
-        const beat = Math.round(timeToBeat(t, project.anchors))
-        const id = addAnchor(beat, t)
-        selectAnchors([id])
       }
       pending.current = null
       setRubber(null)
@@ -380,12 +463,22 @@ export function Timeline() {
       const tAtCursor = xToTime(x)
       const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15
       const pxPerSecond = Math.min(4000, Math.max(8, view.pxPerSecond * factor))
-      const scrollSec = Math.max(0, tAtCursor - x / pxPerSecond)
-      setView({ pxPerSecond, scrollSec })
+      const scrollSec = tAtCursor - x / pxPerSecond
+      setView({ pxPerSecond, scrollSec, followPlayhead: false })
     } else {
-      const scrollSec = Math.max(0, view.scrollSec + (e.deltaX || e.deltaY) / view.pxPerSecond)
-      setView({ scrollSec })
+      const scrollSec = view.scrollSec + (e.deltaX || e.deltaY) / view.pxPerSecond
+      setView({ scrollSec, followPlayhead: false })
     }
+  }
+
+  const onContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    const rect = canvasRef.current!.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const hit = anchorAt(x)
+    if (!hit) return
+    removeAnchor(hit)
+    if (selectedIds.has(hit)) clearSelection()
   }
 
   return (
@@ -398,9 +491,10 @@ export function Timeline() {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onWheel={onWheel}
+        onContextMenu={onContextMenu}
       />
       <div className={styles.legend}>
-        <span>Click: add · Drag: warp · Shift: multi-select · box-drag: select · Alt+Click: delete · Ctrl: no-snap · Ctrl+Wheel: zoom</span>
+        <span>Drag bar line: anchor · Drag anchor: ripple warp · Shift+drag: isolated · Shift+click: multi-select · Right-click: delete · Ctrl: no-snap</span>
         <span className="mono">{Math.round(view.pxPerSecond)} px/s · {contentDuration.toFixed(1)}s</span>
       </div>
     </div>

@@ -28,6 +28,10 @@ export function TransportBar() {
     }
     return undefined
   }, [sources, media])
+  const duration = useMemo(
+    () => audioBuffer?.duration ?? sources.reduce((max, src) => Math.max(max, src.duration), 0),
+    [audioBuffer, sources],
+  )
 
   const [playing, setPlaying] = useState(false)
   const nodeRef = useRef<AudioBufferSourceNode | null>(null)
@@ -53,7 +57,7 @@ export function TransportBar() {
     const node = ctx.createBufferSource()
     node.buffer = audioBuffer
     node.connect(ctx.destination)
-    const offset = Math.min(view.playheadSec, audioBuffer.duration - 0.01)
+    const offset = Math.min(Math.max(0, view.playheadSec), audioBuffer.duration - 0.01)
     offsetRef.current = Math.max(0, offset)
     startedAtRef.current = ctx.currentTime
     node.start(0, offsetRef.current)
@@ -76,6 +80,13 @@ export function TransportBar() {
   const zoom = (factor: number) =>
     setView({ pxPerSecond: Math.min(4000, Math.max(8, view.pxPerSecond * factor)) })
 
+  const seek = (time: number) => {
+    stop()
+    setView({ playheadSec: Math.min(Math.max(0, time), Math.max(0, duration)) })
+  }
+
+  const skip = (delta: number) => seek(view.playheadSec + delta)
+
   const fmt = (s: number) => {
     const m = Math.floor(s / 60)
     const sec = (s % 60).toFixed(2).padStart(5, '0')
@@ -86,16 +97,39 @@ export function TransportBar() {
     <footer className={styles.transport}>
       <div className={styles.group}>
         <button className={styles.iconBtn} onClick={() => { stop(); setView({ playheadSec: 0 }) }} title="Return to start">⏮</button>
+        <button className={styles.iconBtn} onClick={() => skip(-1)} disabled={!duration} title="Back 1 second">−1</button>
         {playing ? (
           <button className={`${styles.iconBtn} primary`} onClick={stop} title="Stop">⏸</button>
         ) : (
           <button className={`${styles.iconBtn} primary`} onClick={play} disabled={!audioBuffer} title="Play">▶</button>
         )}
+        <button className={styles.iconBtn} onClick={() => skip(1)} disabled={!duration} title="Forward 1 second">+1</button>
       </div>
 
-      <div className={`${styles.time} mono`}>{fmt(view.playheadSec)}</div>
+      <div className={`${styles.time} mono`}>{fmt(view.playheadSec)} / {fmt(duration)}</div>
+
+      <input
+        className={styles.seek}
+        type="range"
+        min={0}
+        max={Math.max(0, duration)}
+        step={0.001}
+        value={Math.min(Math.max(0, view.playheadSec), Math.max(0, duration))}
+        disabled={!duration}
+        onChange={(e) => seek(parseFloat(e.target.value))}
+        title="Seek"
+      />
 
       <div className={styles.spacer} />
+
+      <label className={styles.follow}>
+        <input
+          type="checkbox"
+          checked={view.followPlayhead}
+          onChange={(e) => setView({ followPlayhead: e.target.checked })}
+        />
+        Center
+      </label>
 
       <div className={styles.group}>
         <span className={styles.zoomLabel}>Zoom</span>

@@ -19,7 +19,7 @@ function inEditableField(): boolean {
 }
 
 /**
- * Single-page DAW-style shell. Lanes: Toolbar / Timeline / TempoLane /
+ * Single-page Warpgrid shell. Lanes: Toolbar / Timeline / TempoLane /
  * Inspector / Transport / Status. Keyboard-first editing is wired here.
  */
 export function App() {
@@ -86,7 +86,7 @@ export function App() {
           <div className={styles.hint}>
             <div className={styles.hintInner}>
               <strong>Drop an audio or MIDI file</strong>
-              <span>or use <em>Import</em> in the toolbar. Click the timeline to drop a warp anchor; drag anchors to bend the grid onto the performance.</span>
+              <span>or use <em>Import</em> in the toolbar. Drag bar lines onto the performance; Warpgrid creates anchors as you correct the grid.</span>
             </div>
           </div>
         )}
@@ -96,11 +96,12 @@ export function App() {
             <div className={styles.shortcutsCard} onClick={(e) => e.stopPropagation()}>
               <h3>Keyboard & mouse</h3>
               <dl>
-                <dt>Click</dt><dd>add a warp anchor (empty) / select (anchor)</dd>
-                <dt>Drag</dt><dd>warp — move anchor(s); hold Ctrl to disable snap</dd>
+                <dt>Drag bar line</dt><dd>create or move a warp anchor</dd>
+                <dt>Drag anchor</dt><dd>ripple warp — downstream anchors move with it</dd>
+                <dt>Shift+Drag</dt><dd>isolated warp — downstream anchors stay fixed</dd>
                 <dt>Shift+Click</dt><dd>add / remove anchor from selection</dd>
                 <dt>Box drag</dt><dd>rubber-band select anchors</dd>
-                <dt>Alt+Click</dt><dd>delete an anchor</dd>
+                <dt>Right-click</dt><dd>delete an anchor</dd>
                 <dt>← / →</dt><dd>nudge selected anchors (Shift = ×10)</dd>
                 <dt>Delete</dt><dd>remove selected anchors</dd>
                 <dt>A</dt><dd>add anchor at the playhead</dd>

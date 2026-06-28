@@ -20,14 +20,33 @@
 }
 
 .time {
-  font-size: 15px;
+  min-width: 130px;
+  font-size: 13px;
   color: var(--text-0);
   padding: 0 8px;
-  letter-spacing: 0.5px;
+}
+
+.seek {
+  width: min(420px, 34vw);
+  accent-color: var(--accent);
 }
 
 .spacer {
   flex: 1;
+}
+
+.follow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-1);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.follow input {
+  margin: 0;
+  accent-color: var(--accent);
 }
 
 .zoomLabel {

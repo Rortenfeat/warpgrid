@@ -3,9 +3,9 @@
 Warpgrid is built in phases. Each phase is independently useful and leaves the
 app in a runnable state.
 
-## Phase 0 — Scaffold ✅ (current)
+## Phase 0 — Scaffold ✅
 
-- Vite + React + TS project, dark DAW-style single-page shell.
+- Vite + React + TS project, single-page shell.
 - Core tempo-map model + math (`core/tempoMap.ts`, `core/timeSignature.ts`) with unit tests.
 - Import audio (decode + waveform peaks) and MIDI (parse) via drag-drop or picker.
 - Canvas timeline: waveform / piano-roll, beat grid from the tempo map, click-to-add & drag-to-warp anchors, playhead.
@@ -35,15 +35,48 @@ app in a runnable state.
 - Undo/redo polish: a whole drag gesture collapses into one undo step
   (`pauseHistory`/`resumeHistory` around the gesture).
 
-### Phase 2b — deferred
+## Phase 2.5 — UX reset & warp editing model ✅
 
-- True smooth **ramp** segments: exact linear-tempo (logarithmic) integration in
-  `beatToTime`/`timeToBeat`, with explicit BPM markers so the curve is
-  well-determined. Phase 0/2 keep the exact piecewise-constant model.
-- Snapping to audio transients (needs onset detection — Phase 3).
+This phase aligns the product with the intended dedicated Warpgrid workflow,
+instead of treating anchors as the only editable object.
+
+- Visual design reset: light UI, white/near-white surfaces, black text, restrained
+  accent colors, thin dividers, and less boxed-in paneling. Target a lighter,
+  precise, Apple-like tool feel rather than the original dark DAW clone.
+- Transport upgrade: complete playback controls, stable play/stop/seek behavior,
+  and a centered-follow mode where the playhead can remain fixed in the middle of
+  the viewport while the waveform/grid moves underneath it.
+- Direct bar-line warping: dragging a bar line creates or updates a warp anchor on
+  that line automatically. The user should not need to explicitly add an anchor
+  before correcting the grid.
+- Movable first bar line: bar 1 / beat 1 is no longer visually or behaviorally
+  pinned to the left edge. It can be dragged earlier or later to match audio that
+  does not start exactly on the downbeat.
+- Anchor deletion shortcut: right-click an anchor to delete it.
+- Ripple drag becomes the default: dragging an anchor or selected anchors moves
+  downstream anchors with it, preserving the tempo after the moved anchor. This
+  makes the edit change the previous segment without disturbing later musical
+  timing.
+- Non-ripple drag moves to Shift: hold Shift while dragging an anchor or selection
+  to use the current isolated-drag behavior, where downstream anchors stay fixed.
+- Multi-anchor drag follows the same rule: default drag ripples downstream anchors;
+  Shift-drag edits only the selected anchors.
+- Shortcuts overlay and README controls must be updated after the interaction
+  change so the visible help matches the actual editing model.
+
+## Phase 2.6 — Smooth tempo anchors
+
+- Smooth tempo is an anchor property, not a global segment type. If anchor N is
+  marked smooth, the tempo between anchor N-1 and anchor N is interpolated
+  smoothly; otherwise the segment remains piecewise-constant.
+- Implement exact integration for smooth segments in `beatToTime`/`timeToBeat`
+  while keeping constant segments exact and invertible.
+- Surface the smooth flag in the Inspector and, if useful, as a compact inline
+  affordance on selected anchors.
 
 ## Phase 3 — Assisted detection
 
+- Snapping to audio transients.
 - `audio/onsetDetection.ts`: spectral-flux onsets over an STFT with adaptive
   threshold + peak-picking.
 - `audio/tempoEstimate.ts`: autocorrelation / inter-onset tempo tracking with
@@ -78,5 +111,5 @@ app in a runnable state.
   change how beats group into bars, never a beat's length.
 - **Undo history tracks `project` only** — importing media or scrolling is not
   undoable by design.
-- **Ramp tempo** is modeled in the type system (`WarpAnchor.curve`) but mapped
-  as constant in Phase 0; exact integration is Phase 2.
+- **Smooth tempo belongs to the destination anchor**: a smooth flag on anchor N
+  affects the segment from anchor N-1 to anchor N.
