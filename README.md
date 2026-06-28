@@ -38,6 +38,12 @@ npm test           # core tempo-map unit tests (Vitest)
 npm run build      # type-check + production build
 ```
 
+## Deployment
+
+Docker and GitHub Actions deployment are documented in
+[DEPLOYMENT.md](./DEPLOYMENT.md). The container builds the Vite app and serves
+the production bundle with `vite preview` on port `4173`.
+
 ## How it works
 
 The whole app revolves around a **tempo map**: a bidirectional mapping between

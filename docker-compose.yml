@@ -1,0 +1,13 @@
+name: warpgrid
+
+services:
+  warpgrid:
+    image: ${WARPGRID_IMAGE:-ghcr.io/rortenfeat/warpgrid:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${WARPGRID_PORT:-4173}:4173"
+    environment:
+      NODE_ENV: production

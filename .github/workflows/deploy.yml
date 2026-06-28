@@ -1,0 +1,111 @@
+name: Build and deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: warpgrid-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    outputs:
+      image: ${{ steps.image.outputs.name }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build app
+        run: npm run build
+
+      - name: Resolve image name
+        id: image
+        shell: bash
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.image.outputs.name }}:latest
+            ${{ steps.image.outputs.name }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          APP_PORT: ${{ vars.APP_PORT || '4173' }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/warpgrid' }}
+          GHCR_PULL_TOKEN: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          IMAGE: ${{ needs.build.outputs.image }}:${{ github.sha }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          envs: APP_PORT,DEPLOY_PATH,GHCR_PULL_TOKEN,GHCR_USER,IMAGE
+          script: |
+            set -e
+
+            mkdir -p "$DEPLOY_PATH"
+            cd "$DEPLOY_PATH"
+
+            cat > docker-compose.yml <<COMPOSE
+            name: warpgrid
+
+            services:
+              warpgrid:
+                image: ${IMAGE}
+                restart: unless-stopped
+                ports:
+                  - "${APP_PORT}:4173"
+                environment:
+                  NODE_ENV: production
+            COMPOSE
+
+            echo "$GHCR_PULL_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            docker compose pull
+            docker compose up -d --remove-orphans
+            docker image prune -f
